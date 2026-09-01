@@ -1,0 +1,51 @@
+-- Consolidated Schema for AI Marketing Performance Analyzer
+
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(36) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS datasets (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    file_path VARCHAR(512) NOT NULL,
+    status VARCHAR(50) DEFAULT 'PENDING',
+    row_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS campaigns (
+    id VARCHAR(36) PRIMARY KEY,
+    dataset_id VARCHAR(36) NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+    campaign_name VARCHAR(255) NOT NULL,
+    channel VARCHAR(100) NOT NULL,
+    impressions INTEGER DEFAULT 0,
+    clicks INTEGER DEFAULT 0,
+    spend NUMERIC(12, 2) DEFAULT 0.00,
+    conversions INTEGER DEFAULT 0,
+    revenue NUMERIC(12, 2) DEFAULT 0.00,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS analysis_results (
+    id VARCHAR(36) PRIMARY KEY,
+    dataset_id VARCHAR(36) NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+    kpis JSONB,
+    rankings JSONB,
+    trends JSONB,
+    ai_recommendations JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS application_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    level VARCHAR(20) NOT NULL,
+    message TEXT NOT NULL,
+    context VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

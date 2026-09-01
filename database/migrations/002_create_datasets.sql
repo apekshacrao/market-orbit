@@ -1,0 +1,10 @@
+-- Migration 002: Create datasets table
+CREATE TABLE IF NOT EXISTS datasets (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    file_path VARCHAR(512) NOT NULL,
+    status VARCHAR(50) DEFAULT 'PENDING',
+    row_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
