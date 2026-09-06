@@ -10,9 +10,8 @@ def register(user_in: UserCreate, db=Depends(get_db)):
     return AuthService.register(user_in, db)
 
 @router.post("/login", response_model=Token)
-def login(login_data: UserLogin):
-    return AuthService.authenticate(login_data)
-
+def login(login_data: UserLogin, db=Depends(get_db)):
+    return AuthService.authenticate(login_data, db)
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user = Depends(get_current_user)):
     return current_user
