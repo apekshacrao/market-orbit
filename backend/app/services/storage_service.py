@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.models.dataset import Dataset
 from app.services.validation_service import ValidationService
 
+from app.services.campaign_service import CampaignService
 
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,8 +57,23 @@ class StorageService:
         )
 
         db.add(dataset)
-        db.commit()
-        db.refresh(dataset)
+
+        try:
+            db.flush()
+
+            CampaignService.import_campaigns(
+                str(file_path),
+                dataset.id,
+                db,
+            )
+
+            db.commit()
+            db.refresh(dataset)
+
+        except Exception:
+            db.rollback()
+            file_path.unlink(missing_ok=True)
+            raise
 
         return {
             "dataset_id": dataset.id,
