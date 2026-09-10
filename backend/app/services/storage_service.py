@@ -110,3 +110,15 @@ class StorageService:
             "dataset_id": dataset.id,
             "status": dataset.status,
         }
+
+    @staticmethod
+    def get_user_datasets(
+        current_user_id: str,
+        db: Session,
+    ):
+        return (
+            db.query(Dataset)
+            .filter(Dataset.user_id == current_user_id)
+            .order_by(Dataset.created_at.desc())
+            .all()
+        )
