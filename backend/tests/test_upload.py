@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from backend.app.services.storage_service import StorageService
+from app.services.storage_service import StorageService
 
 
 class FakeQuery:
@@ -32,6 +32,7 @@ class FakeDB:
         self.committed = False
         self.rolled_back = False
         self.datasets = []
+        self.campaigns = []
 
     def add(self, obj):
         self.added = obj
@@ -46,6 +47,11 @@ class FakeDB:
         pass
 
     def query(self, model):
+        from app.db.models.campaign import Campaign
+
+        if model is Campaign:
+            return FakeQuery(datasets=self.campaigns)
+
         return FakeQuery(
             dataset=self.added,
             datasets=self.datasets,
@@ -77,7 +83,7 @@ def test_save_valid_csv(tmp_path, monkeypatch):
     upload_dir = tmp_path / "uploads"
 
     monkeypatch.setattr(
-        "backend.app.services.storage_service.UPLOAD_DIR",
+        "app.services.storage_service.UPLOAD_DIR",
         upload_dir,
     )
 
@@ -141,7 +147,7 @@ def test_reject_invalid_csv(tmp_path, monkeypatch):
     upload_dir = tmp_path / "uploads"
 
     monkeypatch.setattr(
-        "backend.app.services.storage_service.UPLOAD_DIR",
+        "app.services.storage_service.UPLOAD_DIR",
         upload_dir,
     )
 
@@ -333,3 +339,84 @@ def test_get_user_datasets_returns_empty_list_when_user_has_no_datasets():
     )
 
     assert result == []
+
+def test_get_dataset_campaigns_returns_campaigns_for_owned_dataset():
+    dataset = type(
+        "FakeDataset",
+        (),
+        {
+            "id": "dataset-123",
+            "user_id": "user-123",
+        },
+    )()
+
+    campaign = type(
+        "FakeCampaign",
+        (),
+        {
+            "id": "campaign-1",
+            "dataset_id": "dataset-123",
+            "campaign_name": "Campaign A",
+            "channel": "Google",
+            "impressions": 1000,
+            "clicks": 100,
+            "spend": 50,
+            "conversions": 10,
+            "revenue": 150,
+            "created_at": 1,
+        },
+    )()
+
+    db = FakeDB()
+    db.added = dataset
+    db.campaigns = [campaign]
+
+    result = StorageService.get_dataset_campaigns(
+        "dataset-123",
+        "user-123",
+        db,
+    )
+
+    assert len(result) == 1
+    assert result[0].id == "campaign-1"
+    assert result[0].campaign_name == "Campaign A"
+    assert result[0].channel == "Google"
+
+
+def test_get_dataset_campaigns_rejects_other_users_dataset():
+    dataset = type(
+        "FakeDataset",
+        (),
+        {
+            "id": "dataset-123",
+            "user_id": "user-456",
+        },
+    )()
+
+    db = FakeDB()
+    db.added = dataset
+
+    try:
+        StorageService.get_dataset_campaigns(
+            "dataset-123",
+            "user-123",
+            db,
+        )
+        assert False
+    except Exception as exc:
+        assert exc.status_code == 403
+
+
+def test_get_dataset_campaigns_rejects_missing_dataset():
+    db = FakeDB()
+    db.added = None
+
+    try:
+        StorageService.get_dataset_campaigns(
+            "dataset-999",
+            "user-123",
+            db,
+        )
+        assert False
+    except Exception as exc:
+        assert exc.status_code == 404

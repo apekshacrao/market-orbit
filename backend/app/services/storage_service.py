@@ -5,6 +5,8 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.models.dataset import Dataset
+from app.db.models.campaign import Campaign
+
 from app.services.validation_service import ValidationService
 
 from app.services.campaign_service import CampaignService
@@ -120,5 +122,36 @@ class StorageService:
             db.query(Dataset)
             .filter(Dataset.user_id == current_user_id)
             .order_by(Dataset.created_at.desc())
+            .all()
+        )
+
+    @staticmethod
+    def get_dataset_campaigns(
+        dataset_id: str,
+        current_user_id: str,
+        db: Session,
+    ):
+        dataset = (
+            db.query(Dataset)
+            .filter(Dataset.id == dataset_id)
+            .first()
+        )
+
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found",
+            )
+
+        if dataset.user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this dataset",
+            )
+
+        return (
+            db.query(Campaign)
+            .filter(Campaign.dataset_id == dataset_id)
+            .order_by(Campaign.created_at.asc())
             .all()
         )

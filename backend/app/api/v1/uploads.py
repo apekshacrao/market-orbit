@@ -1,5 +1,9 @@
 from fastapi import APIRouter, UploadFile, File, Depends
-from app.schemas.upload import FileUploadResponse, DatasetResponse
+from app.schemas.upload import (
+    FileUploadResponse,
+    DatasetResponse,
+    CampaignResponse,
+)
 from app.services.storage_service import StorageService
 from app.dependencies.auth import get_current_user, get_db
 
@@ -30,6 +34,18 @@ def get_status(
     db=Depends(get_db),
 ):
     return StorageService.get_dataset_status(
+        dataset_id,
+        current_user.id,
+        db,
+    )
+
+@router.get("/{dataset_id}/campaigns", response_model=list[CampaignResponse])
+def get_campaigns(
+    dataset_id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    return StorageService.get_dataset_campaigns(
         dataset_id,
         current_user.id,
         db,
