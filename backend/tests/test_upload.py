@@ -154,3 +154,68 @@ def test_reject_invalid_csv(tmp_path, monkeypatch):
     assert db.added is None
     assert db.committed is False
     assert not list(upload_dir.glob("*"))
+
+def test_get_dataset_status_returns_actual_status():
+    dataset = type(
+        "FakeDataset",
+        (),
+        {
+            "id": "dataset-123",
+            "user_id": "user-123",
+            "status": "PENDING",
+        },
+    )()
+
+    db = FakeDB()
+    db.added = dataset
+
+    result = StorageService.get_dataset_status(
+        "dataset-123",
+        "user-123",
+        db,
+    )
+
+    assert result == {
+        "dataset_id": "dataset-123",
+        "status": "PENDING",
+    }
+
+
+def test_get_dataset_status_rejects_other_users_dataset():
+    dataset = type(
+        "FakeDataset",
+        (),
+        {
+            "id": "dataset-123",
+            "user_id": "user-456",
+            "status": "PENDING",
+        },
+    )()
+
+    db = FakeDB()
+    db.added = dataset
+
+    try:
+        StorageService.get_dataset_status(
+            "dataset-123",
+            "user-123",
+            db,
+        )
+        assert False
+    except Exception as exc:
+        assert exc.status_code == 403
+
+
+def test_get_dataset_status_rejects_missing_dataset():
+    db = FakeDB()
+    db.added = None
+
+    try:
+        StorageService.get_dataset_status(
+            "dataset-999",
+            "user-123",
+            db,
+        )
+        assert False
+    except Exception as exc:
+        assert exc.status_code == 404

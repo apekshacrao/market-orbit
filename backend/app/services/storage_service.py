@@ -83,8 +83,30 @@ class StorageService:
         }
 
     @staticmethod
-    def get_dataset_status(dataset_id: str):
+    def get_dataset_status(
+        dataset_id: str,
+        current_user_id: str,
+        db: Session,
+    ):
+        dataset = (
+            db.query(Dataset)
+            .filter(Dataset.id == dataset_id)
+            .first()
+        )
+
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found",
+            )
+
+        if dataset.user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this dataset",
+            )
+
         return {
-            "dataset_id": dataset_id,
-            "status": "COMPLETED",
+            "dataset_id": dataset.id,
+            "status": dataset.status,
         }

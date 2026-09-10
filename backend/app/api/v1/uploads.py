@@ -14,5 +14,13 @@ async def upload_dataset(
     return await StorageService.save_upload(file, current_user, db)
 
 @router.get("/{dataset_id}/status")
-def get_status(dataset_id: str, current_user = Depends(get_current_user)):
-    return StorageService.get_dataset_status(dataset_id)
+def get_status(
+    dataset_id: str,
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    return StorageService.get_dataset_status(
+        dataset_id,
+        current_user.id,
+        db,
+    )
