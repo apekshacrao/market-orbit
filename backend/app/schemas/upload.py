@@ -16,6 +16,19 @@ class DatasetResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class CampaignResponse(BaseModel):
+    id: str
+    campaign_name: str
+    channel: str
+    impressions: int
+    clicks: int
+    spend: float
+    conversions: int
+    revenue: float
+
+    class Config:
+        from_attributes = True
+
 class ValidationErrorDetail(BaseModel):
     row: Optional[int] = None
     column: Optional[str] = None

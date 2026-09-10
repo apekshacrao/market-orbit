@@ -1,6 +1,6 @@
-from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Boolean
+from sqlalchemy import Column, String, DateTime, Boolean, func
 from app.db.base import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -10,4 +10,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
