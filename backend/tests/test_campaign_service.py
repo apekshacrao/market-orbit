@@ -64,12 +64,14 @@ def test_import_campaigns(tmp_path):
     assert result[0].dataset_id == "dataset-123"
 
 
-def test_import_campaigns_with_optional_columns_missing(tmp_path):
+def test_import_campaigns_with_optional_columns(tmp_path):
     csv_file = tmp_path / "campaigns.csv"
 
     csv_file.write_text(
-        "campaign_name,channel,spend,revenue\n"
-        "Summer Sale,Google,1000,3500\n",
+        "campaign_name,channel,impressions,clicks,spend,conversions,"
+        "revenue,date,location,age_group,customer_segment,device\n"
+        "Summer Sale,Google,10000,500,1000,50,3500,"
+        "2026-09-18,Bengaluru,18-24,New Customers,Mobile\n",
         encoding="utf-8",
     )
 
@@ -83,9 +85,50 @@ def test_import_campaigns_with_optional_columns_missing(tmp_path):
     )
 
     assert len(result) == 1
+
+    campaign = result[0]
+
+    assert campaign.date.year == 2026
+    assert campaign.date.month == 9
+    assert campaign.date.day == 18
+
+    assert campaign.location == "Bengaluru"
+    assert campaign.age_group == "18-24"
+    assert campaign.customer_segment == "New Customers"
+    assert campaign.device == "Mobile"
+
+
+def test_import_campaigns_with_optional_columns_missing(tmp_path):
+    csv_file = tmp_path / "campaigns.csv"
+
+    csv_file.write_text(
+        "campaign_name,channel,spend\n"
+        "Summer Sale,Google,1000\n",
+        encoding="utf-8",
+    )
+
+    dataset = FakeDataset()
+    db = FakeDB(dataset)
+
+    result = CampaignService.import_campaigns(
+        str(csv_file),
+        "dataset-123",
+        db,
+    )
+
+    assert len(result) == 1
+
     assert result[0].impressions == 0
     assert result[0].clicks == 0
     assert result[0].conversions == 0
+
+    assert result[0].revenue is None
+    assert result[0].date is None
+    assert result[0].location is None
+    assert result[0].age_group is None
+    assert result[0].customer_segment is None
+    assert result[0].device is None
+
     assert dataset.row_count == 1
 
 
