@@ -92,8 +92,8 @@ def test_save_valid_csv(tmp_path, monkeypatch):
 
         async def read(self):
             return (
-                b"campaign_name,channel,spend,revenue\n"
-                b"Campaign A,Google,100,300\n"
+                b"campaign_name,channel,spend,conversions,revenue\n"
+                b"Campaign A,Google,100,10,300\n"
             )
 
     db = FakeDB()

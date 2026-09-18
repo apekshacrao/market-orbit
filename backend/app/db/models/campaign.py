@@ -17,7 +17,7 @@ class Campaign(Base):
     clicks = Column(Integer, default=0)
     spend = Column(Numeric(12, 2), default=0)
     conversions = Column(Integer, default=0)
-    revenue = Column(Numeric(12, 2), default=0)
+    revenue = Column(Numeric(12, 2), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now()

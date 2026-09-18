@@ -12,8 +12,8 @@ def create_csv(tmp_path: Path, content: str):
 def test_valid_csv(tmp_path):
     file_path = create_csv(
         tmp_path,
-        "campaign_name,channel,spend,revenue\n"
-        "Summer Sale,Google Ads,1200,4500\n",
+        "campaign_name,channel,spend,conversions,revenue\n"
+        "Summer Sale,Google Ads,1200,30,4500\n",
     )
 
     result = ValidationService.validate_dataset_format(file_path)
@@ -32,8 +32,7 @@ def test_missing_required_column(tmp_path):
     result = ValidationService.validate_dataset_format(file_path)
 
     assert result["is_valid"] is False
-    assert "Missing required column: revenue" in result["errors"]
-
+    assert "Missing required column: conversions" in result["errors"]
 
 def test_file_not_found():
     result = ValidationService.validate_dataset_format(
@@ -42,3 +41,14 @@ def test_file_not_found():
 
     assert result["is_valid"] is False
     assert result["errors"] == ["File not found"]
+
+def test_valid_csv_without_revenue(tmp_path):
+    file_path = create_csv(
+        tmp_path,
+        "campaign_name,channel,spend,conversions\n"
+        "Lead Campaign,Google Ads,1200,30\n",
+    )
+
+    result = ValidationService.validate_dataset_format(file_path)
+
+    assert result["is_valid"] is True

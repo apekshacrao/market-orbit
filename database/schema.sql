@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     clicks INTEGER DEFAULT 0,
     spend NUMERIC(12, 2) DEFAULT 0.00,
     conversions INTEGER DEFAULT 0,
-    revenue NUMERIC(12, 2) DEFAULT 0.00,
+    revenue NUMERIC(12, 2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
