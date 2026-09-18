@@ -1,14 +1,9 @@
 import React from 'react';
-import Navbar from './components/common/Navbar';
-import Dashboard from './pages/Dashboard';
+import Login from './pages/Login';
+
 
 export default function App() {
   return (
-    <div className="app-layout">
-      <Navbar />
-      <main className="app-content">
-        <Dashboard />
-      </main>
-    </div>
+    <Login />
   );
 }
