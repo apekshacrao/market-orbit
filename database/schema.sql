@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS campaigns (
     spend NUMERIC(12, 2) DEFAULT 0.00,
     conversions INTEGER DEFAULT 0,
     revenue NUMERIC(12, 2),
+    date DATE,
+    location VARCHAR(255),
+    age_group VARCHAR(100),
+    customer_segment VARCHAR(100),
+    device VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
