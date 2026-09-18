@@ -7,7 +7,7 @@ class ValidationService:
         "campaign_name",
         "channel",
         "spend",
-        "revenue",
+        "conversions",
     }
 
     @staticmethod

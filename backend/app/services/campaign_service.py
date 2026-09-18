@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -32,22 +33,71 @@ class CampaignService:
                         campaign = Campaign(
                             id=str(uuid4()),
                             dataset_id=dataset_id,
+
                             campaign_name=row["campaign_name"].strip(),
                             channel=row["channel"].strip(),
+
                             impressions=int(
                                 row.get("impressions") or 0
                             ),
                             clicks=int(
                                 row.get("clicks") or 0
                             ),
+
                             spend=Decimal(
                                 row["spend"] or "0"
                             ),
+
                             conversions=int(
                                 row.get("conversions") or 0
                             ),
-                            revenue=Decimal(
-                                row["revenue"] or "0"
+
+                            # Revenue is optional
+                            revenue=(
+                                Decimal(row["revenue"])
+                                if row.get("revenue")
+                                and row["revenue"].strip()
+                                else None
+                            ),
+
+                            # Optional date field
+                            date=(
+                                datetime.strptime(
+                                    row["date"].strip(),
+                                    "%Y-%m-%d",
+                                ).date()
+                                if row.get("date")
+                                and row["date"].strip()
+                                else None
+                            ),
+
+                            # Optional demographic fields
+                            location=(
+                                row["location"].strip()
+                                if row.get("location")
+                                and row["location"].strip()
+                                else None
+                            ),
+
+                            age_group=(
+                                row["age_group"].strip()
+                                if row.get("age_group")
+                                and row["age_group"].strip()
+                                else None
+                            ),
+
+                            customer_segment=(
+                                row["customer_segment"].strip()
+                                if row.get("customer_segment")
+                                and row["customer_segment"].strip()
+                                else None
+                            ),
+
+                            device=(
+                                row["device"].strip()
+                                if row.get("device")
+                                and row["device"].strip()
+                                else None
                             ),
                         )
 
