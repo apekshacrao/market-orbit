@@ -83,6 +83,11 @@ class AnalysisService:
                     if campaign.revenue is not None
                     else None
                 ),
+                "date": campaign.date,
+                "location": campaign.location,
+                "age_group": campaign.age_group,
+                "customer_segment": campaign.customer_segment,
+                "device": campaign.device,
             }
             for campaign in campaigns
         ]
