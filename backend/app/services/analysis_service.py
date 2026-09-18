@@ -83,7 +83,13 @@ class AnalysisService:
                     if campaign.revenue is not None
                     else None
                 ),
-                "date": campaign.date,
+                "date": (
+                    campaign.date.isoformat()
+                    if hasattr(campaign.date, "isoformat")
+                    else str(campaign.date)
+                    if campaign.date
+                    else None
+                ),
                 "location": campaign.location,
                 "age_group": campaign.age_group,
                 "customer_segment": campaign.customer_segment,

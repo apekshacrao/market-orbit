@@ -312,3 +312,79 @@ def test_analysis_passes_optional_fields_to_analytics():
     assert campaign_data["age_group"] == "18-24"
     assert campaign_data["customer_segment"] == "New Customers"
     assert campaign_data["device"] == "Mobile"
+
+
+def test_analysis_serializes_date_object_to_iso_string():
+    import datetime
+    dataset = SimpleNamespace(user_id="user-1")
+
+    campaign = SimpleNamespace(
+        campaign_name="Campaign With Date Object",
+        channel="Google Ads",
+        impressions=1000,
+        clicks=100,
+        spend=500,
+        conversions=10,
+        revenue=1500,
+        date=datetime.date(2026, 9, 18),
+        location="Bengaluru",
+        age_group="18-24",
+        customer_segment="New Customers",
+        device="Mobile",
+    )
+
+    dataset_query = SimpleNamespace(
+        filter=lambda condition: SimpleNamespace(
+            first=lambda: dataset
+        )
+    )
+
+    analysis_result_query = SimpleNamespace(
+        filter=lambda condition: SimpleNamespace(
+            order_by=lambda condition: SimpleNamespace(
+                first=lambda: None
+            )
+        )
+    )
+
+    campaign_query = SimpleNamespace(
+        filter=lambda condition: SimpleNamespace(
+            order_by=lambda condition: SimpleNamespace(
+                all=lambda: [campaign]
+            )
+        )
+    )
+
+    db = SimpleNamespace(
+        query=lambda model: (
+            dataset_query
+            if model.__name__ == "Dataset"
+            else analysis_result_query
+            if model.__name__ == "AnalysisResult"
+            else campaign_query
+        ),
+        add=lambda obj: None,
+        commit=lambda: None,
+        refresh=lambda obj: None,
+    )
+
+    captured_data = {}
+
+    def fake_clean_dataset(data):
+        captured_data["data"] = data
+        import pandas as pd
+        return pd.DataFrame(data)
+
+    with patch(
+        "app.services.analysis_service.clean_dataset",
+        side_effect=fake_clean_dataset,
+    ):
+        AnalysisService.get_results(
+            "dataset-1",
+            "user-1",
+            db,
+        )
+
+    campaign_data = captured_data["data"][0]
+    assert campaign_data["date"] == "2026-09-18"
+    assert isinstance(campaign_data["date"], str)

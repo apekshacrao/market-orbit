@@ -1,4 +1,10 @@
-from backend.app.services.campaign_service import CampaignService
+try:
+    from app.services.campaign_service import CampaignService
+except ImportError:
+    from backend.app.services.campaign_service import CampaignService
+
+import pytest
+from fastapi import HTTPException
 
 
 class FakeQuery:
@@ -130,6 +136,93 @@ def test_import_campaigns_with_optional_columns_missing(tmp_path):
     assert result[0].device is None
 
     assert dataset.row_count == 1
+
+
+def test_import_campaigns_invalid_spend(tmp_path):
+    csv_file = tmp_path / "campaigns.csv"
+    csv_file.write_text(
+        "campaign_name,channel,spend,conversions\n"
+        "Summer Sale,Google,invalid_spend,50\n",
+        encoding="utf-8",
+    )
+
+    dataset = FakeDataset()
+    db = FakeDB(dataset)
+
+    with pytest.raises(HTTPException) as exc_info:
+        CampaignService.import_campaigns(
+            str(csv_file),
+            "dataset-123",
+            db,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "row 2" in str(exc_info.value.detail).lower()
+
+
+def test_import_campaigns_invalid_revenue(tmp_path):
+    csv_file = tmp_path / "campaigns.csv"
+    csv_file.write_text(
+        "campaign_name,channel,spend,conversions,revenue\n"
+        "Summer Sale,Google,1000,50,not_a_number\n",
+        encoding="utf-8",
+    )
+
+    dataset = FakeDataset()
+    db = FakeDB(dataset)
+
+    with pytest.raises(HTTPException) as exc_info:
+        CampaignService.import_campaigns(
+            str(csv_file),
+            "dataset-123",
+            db,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "row 2" in str(exc_info.value.detail).lower()
+
+
+def test_import_campaigns_whitespace_spend(tmp_path):
+    csv_file = tmp_path / "campaigns.csv"
+    csv_file.write_text(
+        "campaign_name,channel,spend,conversions\n"
+        "Summer Sale,Google,   ,50\n",
+        encoding="utf-8",
+    )
+
+    dataset = FakeDataset()
+    db = FakeDB(dataset)
+
+    result = CampaignService.import_campaigns(
+        str(csv_file),
+        "dataset-123",
+        db,
+    )
+
+    assert len(result) == 1
+    assert result[0].spend == 0
+
+
+def test_import_campaigns_explicit_zero_revenue(tmp_path):
+    csv_file = tmp_path / "campaigns.csv"
+    csv_file.write_text(
+        "campaign_name,channel,spend,conversions,revenue\n"
+        "Summer Sale,Google,1000,50,0.0\n",
+        encoding="utf-8",
+    )
+
+    dataset = FakeDataset()
+    db = FakeDB(dataset)
+
+    result = CampaignService.import_campaigns(
+        str(csv_file),
+        "dataset-123",
+        db,
+    )
+
+    assert len(result) == 1
+    assert result[0].revenue == 0.0
+    assert result[0].revenue is not None
 
 
 def test_import_campaigns_file_not_found():
