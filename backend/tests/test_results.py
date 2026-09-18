@@ -93,3 +93,49 @@ def test_dataset_access_allowed():
     assert result["kpis"]["total_revenue"] == 1500.0
     assert result["kpis"]["cpa"] == 50.0
     assert result["kpis"]["roas"] == 3.0
+
+def test_analysis_with_missing_revenue():
+    dataset = SimpleNamespace(user_id="user-1")
+
+    campaign = SimpleNamespace(
+        campaign_name="Campaign A",
+        channel="Google Ads",
+        impressions=1000,
+        clicks=100,
+        spend=500,
+        conversions=10,
+        revenue=None,
+    )
+
+    dataset_query = SimpleNamespace(
+        filter=lambda condition: SimpleNamespace(
+            first=lambda: dataset
+        )
+    )
+
+    campaign_query = SimpleNamespace(
+        filter=lambda condition: SimpleNamespace(
+            order_by=lambda condition: SimpleNamespace(
+                all=lambda: [campaign]
+            )
+        )
+    )
+
+    db = SimpleNamespace(
+        query=lambda model: (
+            dataset_query
+            if model.__name__ == "Dataset"
+            else campaign_query
+        )
+    )
+
+    result = AnalysisService.get_results(
+        "dataset-1",
+        "user-1",
+        db,
+    )
+
+    assert result["kpis"]["total_spend"] == 500.0
+    assert result["kpis"]["total_conversions"] == 10
+    assert result["kpis"]["total_revenue"] is None
+    assert result["kpis"]["roas"] is None

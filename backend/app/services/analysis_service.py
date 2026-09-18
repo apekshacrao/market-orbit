@@ -7,6 +7,9 @@ from app.db.models.campaign import Campaign
 from analytics.preprocessing.cleaner import clean_dataset
 from analytics.kpi.metrics import calculate_kpis
 
+from analytics.performance.ranking import rank_campaigns
+from analytics.trends.customer_trends import analyze_trends
+from analytics.ai.groq_client import GroqClient
 
 class AnalysisService:
 
@@ -60,18 +63,22 @@ class AnalysisService:
 
         df = clean_dataset(campaign_data)
         kpis = calculate_kpis(df)
+        rankings = rank_campaigns(df)
+        trends = analyze_trends(df)
+
+        groq_client = GroqClient()
+        recommendations = groq_client.generate_recommendations(
+            kpis,
+            rankings,
+        )
 
         return {
             "dataset_id": dataset_id,
             "kpis": kpis,
-            "rankings": {
-                "top": [],
-                "bottom": [],
-            },
-            "trends": {},
-            "ai_recommendations": [],
+            "rankings": rankings,
+            "trends": trends,
+            "ai_recommendations": recommendations,
         }
-
     @staticmethod
     def get_kpis(
         dataset_id: str,
