@@ -118,9 +118,13 @@ class AnalysisService:
             ai_recommendations=recommendations,
         )
 
-        db.add(analysis_result)
-        db.commit()
-        db.refresh(analysis_result)
+        try:
+            db.add(analysis_result)
+            db.commit()
+            db.refresh(analysis_result)
+        except Exception:
+            db.rollback()
+            raise
 
         # Return complete analysis
         return {

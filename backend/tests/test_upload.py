@@ -420,3 +420,46 @@ def test_get_dataset_campaigns_rejects_missing_dataset():
         assert False
     except Exception as exc:
         assert exc.status_code == 404
+
+
+def test_campaign_response_schema_with_null_revenue_and_optional_fields():
+    import datetime
+    from app.schemas.upload import CampaignResponse
+
+    # Test with full optional fields
+    campaign_full = {
+        "id": "camp-1",
+        "campaign_name": "Summer Sale",
+        "channel": "Meta",
+        "impressions": 1000,
+        "clicks": 100,
+        "spend": 50.0,
+        "conversions": 10,
+        "revenue": None,
+        "date": datetime.date(2026, 9, 19),
+        "location": "Bengaluru",
+        "age_group": "18-24",
+        "customer_segment": "New Customers",
+        "device": "Mobile",
+    }
+    validated = CampaignResponse.model_validate(campaign_full)
+    assert validated.id == "camp-1"
+    assert validated.revenue is None
+    assert validated.location == "Bengaluru"
+    assert validated.date == datetime.date(2026, 9, 19)
+
+    # Test with omitted optional fields
+    campaign_minimal = {
+        "id": "camp-2",
+        "campaign_name": "Winter Sale",
+        "channel": "Google",
+        "impressions": 500,
+        "clicks": 50,
+        "spend": 25.0,
+        "conversions": 5,
+    }
+    validated_min = CampaignResponse.model_validate(campaign_minimal)
+    assert validated_min.id == "camp-2"
+    assert validated_min.revenue is None
+    assert validated_min.location is None
+    assert validated_min.device is None

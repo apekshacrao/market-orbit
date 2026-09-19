@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+import datetime
 from typing import Optional, List
+from pydantic import BaseModel
 
 class FileUploadResponse(BaseModel):
     dataset_id: str
@@ -24,7 +25,12 @@ class CampaignResponse(BaseModel):
     clicks: int
     spend: float
     conversions: int
-    revenue: float
+    revenue: Optional[float] = None
+    date: Optional[datetime.date] = None
+    location: Optional[str] = None
+    age_group: Optional[str] = None
+    customer_segment: Optional[str] = None
+    device: Optional[str] = None
 
     class Config:
         from_attributes = True

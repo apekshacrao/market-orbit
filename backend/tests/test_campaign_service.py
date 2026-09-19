@@ -1,4 +1,7 @@
-from backend.app.services.campaign_service import CampaignService
+try:
+    from app.services.campaign_service import CampaignService
+except ImportError:
+    from backend.app.services.campaign_service import CampaignService
 
 
 class FakeQuery:
