@@ -1,6 +1,6 @@
 import csv
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -45,7 +45,7 @@ class CampaignService:
                             ),
 
                             spend=Decimal(
-                                row["spend"] or "0"
+                                (row["spend"] or "0").strip() or "0"
                             ),
 
                             conversions=int(
@@ -54,7 +54,7 @@ class CampaignService:
 
                             # Revenue is optional
                             revenue=(
-                                Decimal(row["revenue"])
+                                Decimal(row["revenue"].strip())
                                 if row.get("revenue")
                                 and row["revenue"].strip()
                                 else None
@@ -103,7 +103,7 @@ class CampaignService:
 
                         campaigns.append(campaign)
 
-                    except (ValueError, KeyError) as exc:
+                    except (ValueError, KeyError, DecimalException) as exc:
                         raise HTTPException(
                             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail=(

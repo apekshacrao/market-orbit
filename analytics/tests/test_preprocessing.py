@@ -259,3 +259,41 @@ def test_list_of_dictionaries_input_conversion():
     assert df["revenue"].iloc[0] == 300.0
     assert pd.isna(df["revenue"].iloc[1])
     assert records == original_copy
+
+
+# 13. Date object compatibility (SQLAlchemy datetime.date support)
+def test_valid_record_with_date_object():
+    import datetime
+    record = {
+        "campaign_name": "Date Object Campaign",
+        "channel": "Google Ads",
+        "spend": 500.0,
+        "conversions": 10,
+        "date": datetime.date(2026, 9, 18),
+    }
+    model = CampaignInputRecord(**record)
+    assert model.date == "2026-09-18"
+    assert isinstance(model.date, str)
+
+    val_res = validate_dataset([record])
+    assert val_res["is_valid"] is True
+    assert val_res["validated_records"][0].date == "2026-09-18"
+
+
+# 14. Datetime object compatibility
+def test_valid_record_with_datetime_object():
+    import datetime
+    record = {
+        "campaign_name": "Datetime Object Campaign",
+        "channel": "Meta Ads",
+        "spend": 400.0,
+        "conversions": 8,
+        "date": datetime.datetime(2026, 9, 18, 14, 30, 0),
+    }
+    model = CampaignInputRecord(**record)
+    assert model.date == "2026-09-18"
+    assert isinstance(model.date, str)
+
+    val_res = validate_dataset([record])
+    assert val_res["is_valid"] is True
+    assert val_res["validated_records"][0].date == "2026-09-18"

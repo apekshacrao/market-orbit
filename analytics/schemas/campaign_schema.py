@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Optional
+import datetime
+from typing import Optional, Union
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
@@ -22,7 +22,7 @@ class CampaignInputRecord(BaseModel):
     revenue: Optional[float] = Field(default=None, ge=0.0, description="Attributed revenue in USD (None if untracked, >= 0.0 if tracked)")
 
     # Optional date and demographic dimensions
-    date: Optional[str] = Field(default=None, description="Campaign record date in YYYY-MM-DD format")
+    date: Optional[Union[str, datetime.date, datetime.datetime]] = Field(default=None, description="Campaign record date in YYYY-MM-DD format")
     location: Optional[str] = Field(default=None, description="Geographic location or region")
     age_group: Optional[str] = Field(default=None, description="Target age bracket")
     customer_segment: Optional[str] = Field(default=None, description="Target customer cohort/segment")
@@ -37,19 +37,21 @@ class CampaignInputRecord(BaseModel):
 
     @field_validator("date")
     @classmethod
-    def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
+    def validate_date_format(cls, v: Optional[Union[str, datetime.date, datetime.datetime]]) -> Optional[str]:
         if v is None:
             return None
+        if isinstance(v, (datetime.date, datetime.datetime)):
+            return v.strftime("%Y-%m-%d")
         if isinstance(v, str):
             v_clean = v.strip()
             if not v_clean:
                 return None
             try:
-                datetime.strptime(v_clean, "%Y-%m-%d")
+                datetime.datetime.strptime(v_clean, "%Y-%m-%d")
                 return v_clean
             except ValueError:
                 raise ValueError("Date must be a valid calendar date in 'YYYY-MM-DD' format")
-        raise ValueError("Date must be a string in 'YYYY-MM-DD' format")
+        raise ValueError("Date must be a string or date in 'YYYY-MM-DD' format")
 
     @field_validator("location", "age_group", "customer_segment", "device")
     @classmethod
