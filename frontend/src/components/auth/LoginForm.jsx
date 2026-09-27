@@ -36,6 +36,11 @@ export default function LoginForm({ onSubmit, loading, error }) {
       <button type="submit" disabled={loading}>
         {loading ? 'Signing in...' : 'Sign In'}
       </button>
+
+      <p className="auth-switch">
+        Don't have an account?{' '}
+        <a href="/register">Create one</a>
+      </p>
     </form>
   );
 }

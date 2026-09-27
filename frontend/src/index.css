@@ -192,3 +192,20 @@ a {
     max-width: 100%;
   }
 }
+
+.auth-switch {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.auth-switch a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.auth-switch a:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
