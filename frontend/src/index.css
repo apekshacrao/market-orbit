@@ -1,3 +1,7 @@
+/* ========================================
+   GLOBAL
+   ======================================== */
+
 :root {
   --color-bg: #f7f7f5;
   --color-surface: #ffffff;
@@ -10,7 +14,6 @@
   --color-accent: #c58b3a;
 
   --color-text: #17201f;
-
   --color-text-muted: #64706e;
 
   --color-border: #e2e6e4;
@@ -18,37 +21,32 @@
   --color-success: #2f855a;
   --color-danger: #c53030;
 
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius-sm: 6px;
+  --radius-lg: 12px;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-
-  --shadow-card: 0 10px 30px rgba(23, 32, 31, 0.08);
+  --shadow-card: 0 4px 16px rgba(23, 32, 31, 0.08);
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
-html {
-  scroll-behavior: smooth;
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
 }
 
 body {
-  background-color: var(--color-bg);
+  font-family: Arial, sans-serif;
+  background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-sans);
-  min-height: 100vh;
 }
 
 button,
-input,
-textarea,
-select {
-  font: inherit;
+input {
+  font-family: inherit;
 }
 
 button {
@@ -56,24 +54,33 @@ button {
 }
 
 a {
-  color: inherit;
   text-decoration: none;
 }
 
-/* ================================
-   AUTH / LOGIN PAGE
-   ================================ */
+
+/* ========================================
+   COMMON PAGE
+   ======================================== */
 
 .page-container {
   min-height: 100vh;
 }
 
+
+/* ========================================
+   LOGIN / REGISTER
+   ======================================== */
+
 .auth-page {
+  min-height: 100vh;
+
   display: flex;
   align-items: center;
   justify-content: center;
+
   gap: 80px;
   padding: 40px;
+
   background: var(--color-bg);
 }
 
@@ -82,33 +89,43 @@ a {
 }
 
 .auth-brand h1 {
+  margin-bottom: 16px;
+
   font-size: 48px;
   font-weight: 700;
   letter-spacing: -1.5px;
+
   color: var(--color-text);
-  margin-bottom: 16px;
 }
 
 .auth-brand p {
   font-size: 18px;
   line-height: 1.6;
+
   color: var(--color-text-muted);
 }
 
 .auth-form-container {
   width: 100%;
   max-width: 420px;
-  background: var(--color-surface);
+
   padding: 36px;
+
+  background: var(--color-surface);
+
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+
   box-shadow: var(--shadow-card);
 }
 
 .login-form h2 {
-  font-size: 28px;
-  color: var(--color-text);
+  margin-top: 0;
   margin-bottom: 28px;
+
+  font-size: 28px;
+
+  color: var(--color-text);
 }
 
 .form-group {
@@ -117,41 +134,60 @@ a {
 
 .form-group label {
   display: block;
+
   margin-bottom: 8px;
+
   font-size: 14px;
   font-weight: 600;
+
   color: var(--color-text);
 }
 
 .form-group input {
   width: 100%;
+
   padding: 12px 14px;
+
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+
   outline: none;
+
   background: var(--color-surface);
   color: var(--color-text);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .form-group input:focus {
   border-color: var(--color-primary);
+
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .login-form button {
   width: 100%;
+
   padding: 13px 16px;
+
   border: none;
   border-radius: var(--radius-sm);
+
   background: var(--color-primary);
   color: white;
+
   font-weight: 600;
-  transition: background 0.2s ease, transform 0.2s ease;
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
 }
 
 .login-form button:hover {
   background: var(--color-primary-hover);
+
   transform: translateY(-1px);
 }
 
@@ -163,20 +199,235 @@ a {
 .error-message {
   margin-bottom: 16px;
   padding: 10px 12px;
+
   border-radius: var(--radius-sm);
+
   background: #fff1f1;
   color: var(--color-danger);
+
   font-size: 14px;
 }
 
-/* ================================
-   RESPONSIVE
-   ================================ */
+.auth-switch {
+  margin-top: 20px;
+
+  text-align: center;
+
+  font-size: 14px;
+
+  color: var(--color-text-muted);
+}
+
+.auth-switch a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.auth-switch a:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+
+/* ========================================
+   NAVBAR
+   ======================================== */
+
+.navbar {
+  height: 72px;
+
+  padding: 0 32px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  background: var(--color-surface);
+
+  border-bottom: 1px solid var(--color-border);
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: baseline;
+
+  gap: 12px;
+}
+
+.navbar-brand h2 {
+  margin: 0;
+
+  font-size: 21px;
+  font-weight: 700;
+
+  color: var(--color-text);
+}
+
+.navbar-brand span {
+  font-size: 13px;
+
+  color: var(--color-text-muted);
+}
+
+.navbar-user {
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+
+  font-weight: 700;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+
+  gap: 2px;
+}
+
+.user-info strong {
+  font-size: 14px;
+
+  color: var(--color-text);
+}
+
+.user-info span {
+  font-size: 12px;
+
+  color: var(--color-text-muted);
+}
+
+.logout-button {
+  margin-left: 16px;
+
+  padding: 8px 14px;
+
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+
+  background: var(--color-surface);
+  color: var(--color-text);
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.logout-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+
+/* ========================================
+   SIDEBAR
+   ======================================== */
+
+.sidebar {
+  width: 230px;
+  min-height: calc(100vh - 72px);
+
+  padding: 24px 16px;
+
+  background: var(--color-surface);
+
+  border-right: 1px solid var(--color-border);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+
+  gap: 8px;
+}
+
+.sidebar-link {
+  display: block;
+
+  padding: 12px 14px;
+
+  border-radius: var(--radius-sm);
+
+  color: var(--color-text-muted);
+
+  font-size: 14px;
+  font-weight: 600;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.sidebar-link:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.sidebar-link.active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+
+/* ========================================
+   DASHBOARD
+   ======================================== */
+
+.dashboard-page {
+  min-height: 100vh;
+
+  background: var(--color-bg);
+}
+
+.dashboard-layout {
+  display: flex;
+
+  min-height: calc(100vh - 72px);
+}
+
+.dashboard-content {
+  flex: 1;
+
+  padding: 40px;
+}
+
+.dashboard-content h1 {
+  margin-top: 0;
+  margin-bottom: 8px;
+
+  font-size: 32px;
+}
+
+.dashboard-content p {
+  margin: 0;
+
+  color: var(--color-text-muted);
+}
+
+
+/* ========================================
+   RESPONSIVE AUTH
+   ======================================== */
 
 @media (max-width: 768px) {
   .auth-page {
     flex-direction: column;
+
     gap: 32px;
+
     padding: 24px;
   }
 
@@ -191,21 +442,21 @@ a {
   .auth-form-container {
     max-width: 100%;
   }
-}
 
-.auth-switch {
-  margin-top: 20px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--color-text-muted);
-}
+  .navbar {
+    padding: 0 20px;
+  }
 
-.auth-switch a {
-  color: var(--color-primary);
-  font-weight: 600;
-}
+  .navbar-brand span,
+  .user-info {
+    display: none;
+  }
 
-.auth-switch a:hover {
-  color: var(--color-primary-hover);
-  text-decoration: underline;
+  .sidebar {
+    width: 180px;
+  }
+
+  .dashboard-content {
+    padding: 24px;
+  }
 }

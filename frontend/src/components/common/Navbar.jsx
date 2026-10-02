@@ -1,21 +1,25 @@
 import React from 'react';
 
-export default function Navbar({ user, onLogout }) {
+export default function Navbar() {
   return (
-    <nav className="navbar">
-      <div className="nav-brand">
-        <h1>AI Marketing Analyzer</h1>
+    <header className="navbar">
+      <div className="navbar-brand">
+        <h2>Market Orbit</h2>
+        <span>Marketing Intelligence</span>
       </div>
-      <div className="nav-links">
-        {user ? (
-          <>
-            <span className="user-email">{user.email}</span>
-            <button onClick={onLogout} className="logout-button">Logout</button>
-          </>
-        ) : (
-          <span>Welcome</span>
-        )}
+
+      <div className="navbar-user">
+        <div className="user-avatar">U</div>
+
+        <div className="user-info">
+          <strong>User</strong>
+          <span>Marketing Analyst</span>
+        </div>
+
+        <button className="logout-button">
+          Logout
+        </button>
       </div>
-    </nav>
+    </header>
   );
 }
