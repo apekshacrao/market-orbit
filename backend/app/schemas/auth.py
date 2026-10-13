@@ -10,9 +10,15 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class LoginUserResponse(BaseModel):
+    id: str
+    name: Optional[str] = None
+    email: EmailStr
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+    user: LoginUserResponse
 
 class UserResponse(BaseModel):
     id: str
