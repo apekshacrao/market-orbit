@@ -1,8 +1,22 @@
 import React from 'react';
 import Navbar from '../components/common/Navbar';
 import Sidebar from '../components/common/Sidebar';
+import KpiCards from '../components/dashboard/KpiCards';
+import CampaignRanking from '../components/dashboard/CampaignRanking';
 
 export default function Dashboard() {
+  const topCampaigns = [
+    { name: 'Summer Sale', roas: 3.6 },
+    { name: 'Diwali Campaign', roas: 3.0 },
+    { name: 'Product Launch', roas: 2.3 }
+  ];
+
+  const bottomCampaigns = [
+    { name: 'Winter Sale', roas: 0.8 },
+    { name: 'Email Campaign', roas: 1.1 },
+    { name: 'Social Campaign', roas: 1.3 }
+  ];
+
   return (
     <div className="dashboard-page">
       <Navbar />
@@ -13,6 +27,13 @@ export default function Dashboard() {
         <main className="dashboard-content">
           <h1>Dashboard</h1>
           <p>Welcome to your marketing performance dashboard.</p>
+
+          <KpiCards />
+
+          <CampaignRanking
+            topCampaigns={topCampaigns}
+            bottomCampaigns={bottomCampaigns}
+          />
         </main>
       </div>
     </div>
