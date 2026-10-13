@@ -202,9 +202,13 @@ class AnalysisService:
             ai_recommendations=recommendations,
         )
 
-        db.add(analysis_result)
-        db.commit()
-        db.refresh(analysis_result)
+        try:
+            db.add(analysis_result)
+            db.commit()
+            db.refresh(analysis_result)
+        except Exception:
+            db.rollback()
+            raise
 
         return AnalysisService._contract_response(
             dataset_id, kpis, rankings, campaign_data, recommendations
