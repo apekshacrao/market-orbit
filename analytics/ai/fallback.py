@@ -145,36 +145,51 @@ def _extract_supporting_evidence(insight: Dict[str, Any]) -> Optional[Supporting
 
     # Determine primary observed value
     observed_value: Optional[float] = None
-    if "roas" in raw_evidence and raw_evidence["roas"] is not None:
+
+    # Prioritize matching metric if present in raw_evidence (e.g. spend for zero-conversion spend)
+    if metric in raw_evidence and raw_evidence[metric] is not None:
         try:
-            observed_value = float(raw_evidence["roas"])
+            observed_value = float(raw_evidence[metric])
         except (ValueError, TypeError):
             pass
-    elif "cpa" in raw_evidence and raw_evidence["cpa"] is not None:
-        try:
-            observed_value = float(raw_evidence["cpa"])
-        except (ValueError, TypeError):
-            pass
-    elif "conversions" in raw_evidence and raw_evidence["conversions"] is not None:
-        try:
-            observed_value = float(raw_evidence["conversions"])
-        except (ValueError, TypeError):
-            pass
-    elif "spend" in raw_evidence and raw_evidence["spend"] is not None:
-        try:
-            observed_value = float(raw_evidence["spend"])
-        except (ValueError, TypeError):
-            pass
-    elif "observed_revenue" in raw_evidence and raw_evidence["observed_revenue"] is not None:
-        try:
-            observed_value = float(raw_evidence["observed_revenue"])
-        except (ValueError, TypeError):
-            pass
-    elif "distinct_dates_count" in raw_evidence and raw_evidence["distinct_dates_count"] is not None:
-        try:
-            observed_value = float(raw_evidence["distinct_dates_count"])
-        except (ValueError, TypeError):
-            pass
+
+    # Fallback to standard key discovery
+    if observed_value is None:
+        if "roas" in raw_evidence and raw_evidence["roas"] is not None:
+            try:
+                observed_value = float(raw_evidence["roas"])
+            except (ValueError, TypeError):
+                pass
+        elif "cpa" in raw_evidence and raw_evidence["cpa"] is not None:
+            try:
+                observed_value = float(raw_evidence["cpa"])
+            except (ValueError, TypeError):
+                pass
+        elif "conversions" in raw_evidence and raw_evidence["conversions"] is not None:
+            try:
+                observed_value = float(raw_evidence["conversions"])
+            except (ValueError, TypeError):
+                pass
+        elif "spend" in raw_evidence and raw_evidence["spend"] is not None:
+            try:
+                observed_value = float(raw_evidence["spend"])
+            except (ValueError, TypeError):
+                pass
+        elif "observed_revenue" in raw_evidence and raw_evidence["observed_revenue"] is not None:
+            try:
+                observed_value = float(raw_evidence["observed_revenue"])
+            except (ValueError, TypeError):
+                pass
+        elif "distinct_dates_count" in raw_evidence and raw_evidence["distinct_dates_count"] is not None:
+            try:
+                observed_value = float(raw_evidence["distinct_dates_count"])
+            except (ValueError, TypeError):
+                pass
+        elif "observed_dates_count" in raw_evidence and raw_evidence["observed_dates_count"] is not None:
+            try:
+                observed_value = float(raw_evidence["observed_dates_count"])
+            except (ValueError, TypeError):
+                pass
 
     campaign_name = raw_evidence.get("campaign_name")
     dimension = raw_evidence.get("dimension")

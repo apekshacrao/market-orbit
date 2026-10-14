@@ -847,3 +847,217 @@ def test_api_get_kpis_forbidden(test_client):
         assert response.json()["detail"] == "You do not have access to this dataset"
     finally:
         app.dependency_overrides.clear()
+
+
+# ===========================================================================
+# Phase 5.7: End-to-End AI Integration & Verification Tests
+# ===========================================================================
+
+def _make_mock_db_and_campaigns():
+    dataset = SimpleNamespace(id="dataset-p57", user_id="user-1")
+    campaign1 = SimpleNamespace(
+        campaign_name="Alpha", channel="Google Ads", impressions=1000, clicks=100,
+        spend=200.0, conversions=20, revenue=600.0, date="2026-01-01",
+        location="US", age_group="25-34", customer_segment="B2C", device="Mobile",
+    )
+    campaign2 = SimpleNamespace(
+        campaign_name="Beta", channel="Facebook", impressions=500, clicks=50,
+        spend=100.0, conversions=0, revenue=0.0, date="2026-01-02",
+        location="UK", age_group="35-44", customer_segment="B2B", device="Desktop",
+    )
+    saved_records = []
+
+    dataset_query = SimpleNamespace(filter=lambda condition: SimpleNamespace(first=lambda: dataset))
+    analysis_result_query = SimpleNamespace(filter=lambda cond: SimpleNamespace(order_by=lambda c: SimpleNamespace(first=lambda: None)))
+    campaign_query = SimpleNamespace(filter=lambda cond: SimpleNamespace(order_by=lambda c: SimpleNamespace(all=lambda: [campaign1, campaign2])))
+
+    mock_db = SimpleNamespace(
+        query=lambda model: (
+            dataset_query if model.__name__ == "Dataset"
+            else analysis_result_query if model.__name__ == "AnalysisResult"
+            else campaign_query
+        ),
+        add=lambda obj: saved_records.append(obj),
+        commit=lambda: None,
+        refresh=lambda obj: None,
+        rollback=lambda: None,
+    )
+    return mock_db, saved_records
+
+
+def test_analysis_service_uses_recommendation_service_fallback():
+    """Verify AnalysisService.get_results uses RecommendationService and saves deterministic fallback when unconfigured."""
+    db, saved_records = _make_mock_db_and_campaigns()
+
+    result = AnalysisService.get_results(
+        dataset_id="dataset-p57",
+        current_user_id="user-1",
+        db=db,
+    )
+
+    assert AnalysisResultResponse.model_validate(result)
+    assert len(saved_records) == 1
+    persisted = saved_records[0]
+    assert persisted.ai_recommendations is not None
+    assert len(persisted.ai_recommendations) > 0
+
+    # Verify all recommendations are attributed to deterministic fallback
+    for item in persisted.ai_recommendations:
+        assert item["source"] == "deterministic_fallback"
+        assert "title" in item
+        assert "action" in item
+        assert "category" in item
+
+    # Verify response matches persisted records
+    assert result["recommendations"] == persisted.ai_recommendations
+
+
+def test_analysis_service_uses_recommendation_service_live_mocked():
+    """Verify AnalysisService.get_results uses RecommendationService and saves live LLM recommendations when mocked."""
+    db, saved_records = _make_mock_db_and_campaigns()
+
+    mock_llm_json = """[
+        {
+            "id": "rec-live-001",
+            "category": "channel_scaling",
+            "title": "Scale High-Performing Alpha",
+            "action": "Increase daily spend on Alpha by 20%.",
+            "rationale": "Alpha delivers 3.0x ROAS with $10 CPA.",
+            "supporting_evidence": {
+                "metric": "roas",
+                "observed_value": 3.0,
+                "campaign_name": "Alpha"
+            },
+            "limitations": ["Assumes constant marginal ROAS"],
+            "source": "groq_llm"
+        }
+    ]"""
+
+    from analytics.ai.groq_client import GroqClient
+    from analytics.ai.service import RecommendationService
+
+    client = GroqClient(api_key="gsk_mock_test_key_abc123")
+    client.chat_completion = lambda **kwargs: mock_llm_json
+    service = RecommendationService(client=client)
+
+    result = AnalysisService.get_results(
+        dataset_id="dataset-p57",
+        current_user_id="user-1",
+        db=db,
+        recommendation_service=service,
+    )
+
+    assert AnalysisResultResponse.model_validate(result)
+    assert len(saved_records) == 1
+    persisted = saved_records[0]
+    assert len(persisted.ai_recommendations) == 1
+    assert persisted.ai_recommendations[0]["id"] == "rec-live-001"
+    assert persisted.ai_recommendations[0]["source"] == "groq_llm"
+    assert persisted.ai_recommendations[0]["category"] == "channel_scaling"
+    assert result["recommendations"] == persisted.ai_recommendations
+
+
+def test_analysis_service_provider_error_falls_back_gracefully():
+    """Verify AnalysisService falls back to deterministic recommendations upon Groq provider error."""
+    db, saved_records = _make_mock_db_and_campaigns()
+
+    from analytics.ai.groq_client import GroqClient, GroqRateLimitError
+    from analytics.ai.service import RecommendationService
+
+    client = GroqClient(api_key="gsk_mock_test_key_abc123")
+    def fail_chat(**kwargs):
+        raise GroqRateLimitError("Rate limit exceeded 429")
+    client.chat_completion = fail_chat
+    service = RecommendationService(client=client)
+
+    result = AnalysisService.get_results(
+        dataset_id="dataset-p57",
+        current_user_id="user-1",
+        db=db,
+        recommendation_service=service,
+    )
+
+    assert AnalysisResultResponse.model_validate(result)
+    assert len(saved_records) == 1
+    persisted = saved_records[0]
+    assert len(persisted.ai_recommendations) > 0
+    assert persisted.ai_recommendations[0]["source"] == "deterministic_fallback"
+
+
+def test_analysis_service_parsing_error_falls_back_gracefully():
+    """Verify AnalysisService falls back to deterministic recommendations upon LLM malformed JSON."""
+    db, saved_records = _make_mock_db_and_campaigns()
+
+    from analytics.ai.groq_client import GroqClient
+    from analytics.ai.service import RecommendationService
+
+    client = GroqClient(api_key="gsk_mock_test_key_abc123")
+    client.chat_completion = lambda **kwargs: "Sorry, I cannot produce JSON right now."
+    service = RecommendationService(client=client)
+
+    result = AnalysisService.get_results(
+        dataset_id="dataset-p57",
+        current_user_id="user-1",
+        db=db,
+        recommendation_service=service,
+    )
+
+    assert AnalysisResultResponse.model_validate(result)
+    assert len(saved_records) == 1
+    persisted = saved_records[0]
+    assert len(persisted.ai_recommendations) > 0
+    assert persisted.ai_recommendations[0]["source"] == "deterministic_fallback"
+
+
+def test_analysis_service_validation_error_falls_back_gracefully():
+    """Verify AnalysisService falls back to deterministic recommendations upon schema contract violation."""
+    db, saved_records = _make_mock_db_and_campaigns()
+
+    from analytics.ai.groq_client import GroqClient
+    from analytics.ai.service import RecommendationService
+
+    invalid_schema_json = """[
+        {
+            "id": "rec-bad",
+            "category": "not_a_real_category",
+            "title": "Invalid Category",
+            "action": "Do something",
+            "rationale": "Because reasons",
+            "source": "groq_llm"
+        }
+    ]"""
+
+    client = GroqClient(api_key="gsk_mock_test_key_abc123")
+    client.chat_completion = lambda **kwargs: invalid_schema_json
+    service = RecommendationService(client=client)
+
+    result = AnalysisService.get_results(
+        dataset_id="dataset-p57",
+        current_user_id="user-1",
+        db=db,
+        recommendation_service=service,
+    )
+
+    assert AnalysisResultResponse.model_validate(result)
+    assert len(saved_records) == 1
+    persisted = saved_records[0]
+    assert len(persisted.ai_recommendations) > 0
+    assert persisted.ai_recommendations[0]["source"] == "deterministic_fallback"
+
+
+def test_analysis_service_programming_error_propagates():
+    """Verify unexpected programming errors inside recommendation service are not swallowed."""
+    db, saved_records = _make_mock_db_and_campaigns()
+
+    class BrokenService:
+        def get_recommendation_list(self, **kwargs):
+            raise TypeError("Unexpected bug inside recommendation logic")
+
+    with pytest.raises(TypeError, match="Unexpected bug"):
+        AnalysisService.get_results(
+            dataset_id="dataset-p57",
+            current_user_id="user-1",
+            db=db,
+            recommendation_service=BrokenService(),
+        )
+

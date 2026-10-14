@@ -2395,4 +2395,57 @@ def test_package_exports_for_phase_5_6():
     assert hasattr(ai_package, "get_recommendation_list")
 
 
+# ---------------------------------------------------------------------------
+# 14. Phase 5.7: Evidence Extraction Corrections
+# ---------------------------------------------------------------------------
+
+def test_fallback_spend_metric_observed_value_is_spend():
+    """Verify that when insight metric is 'spend', observed_value reflects spend, not conversions."""
+    waste_insight = {
+        "id": "insight-waste",
+        "type": "campaign_performance",
+        "title": "Zero-Conversion Spend: Wasteland",
+        "description": "'Wasteland' recorded $175.50 in spend with 0 conversions achieved.",
+        "metric": "spend",
+        "evidence": {
+            "campaign_name": "Wasteland",
+            "spend": 175.50,
+            "conversions": 0,
+        },
+    }
+    rec = map_insight_to_recommendation(waste_insight)
+    assert rec.supporting_evidence is not None
+    assert rec.supporting_evidence.metric == "spend"
+    assert rec.supporting_evidence.observed_value == 175.50
+    assert rec.supporting_evidence.campaign_name == "Wasteland"
+    assert rec.supporting_evidence.context == {"spend": 175.50, "conversions": 0}
+
+
+def test_fallback_timeline_progression_observed_dates_count():
+    """Verify that timeline progression insight with 'observed_dates_count' extracts observed_value."""
+    timeline_insight = {
+        "id": "insight-time",
+        "type": "time_series",
+        "title": "Timeline Progression: 2026-01-01 to 2026-01-10",
+        "description": "Across 10 observed dates, spend shifted from $50 to $100.",
+        "metric": "conversions",
+        "evidence": {
+            "start_date": "2026-01-01",
+            "start_spend": 50.0,
+            "start_conversions": 2,
+            "end_date": "2026-01-10",
+            "end_spend": 100.0,
+            "end_conversions": 8,
+            "observed_dates_count": 10,
+        },
+    }
+    rec = map_insight_to_recommendation(timeline_insight)
+    assert rec.supporting_evidence is not None
+    assert rec.supporting_evidence.observed_value == 10.0
+    assert rec.supporting_evidence.context is not None
+    assert rec.supporting_evidence.context["start_spend"] == 50.0
+    assert rec.supporting_evidence.context["end_conversions"] == 8
+
+
+
 
