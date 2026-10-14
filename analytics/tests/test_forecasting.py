@@ -4,7 +4,11 @@ import pandas as pd
 import pytest
 
 from analytics.forecasting.data_prep import prepare_daily_series
-from analytics.forecasting import prepare_daily_series as package_entrypoint
+from analytics.forecasting.baselines import forecast_baselines
+from analytics.forecasting import (
+    prepare_daily_series as package_entrypoint,
+    forecast_baselines as package_forecast,
+)
 from analytics.kpi.metrics import calculate_kpis
 from analytics.performance.ranking import rank_campaigns
 from analytics.trends.customer_trends import analyze_trends
@@ -358,3 +362,322 @@ def test_seasonal_dates_diagnostic_14_contiguous_days():
     assert result["metadata"]["contiguous_dates_count"] == 14
     assert result["metadata"]["has_minimum_dates"] is True
     assert result["metadata"]["has_seasonal_dates"] is True
+
+
+def test_naive_persistence_values_and_dates():
+    """16. Naive persistence uses latest observed values for exact horizon dates."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0 + i, "conversions": 10 + i, "clicks": 50 + i, "impressions": 1000 + i, "revenue": 300.0 + i}
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=3)
+
+    assert result["is_available"] is True
+    assert result["horizon"] == 3
+    naive = result["models"]["naive"]
+    assert naive["is_eligible"] is True
+
+    forecast = naive["forecast"]
+    assert len(forecast) == 3
+    assert forecast[0]["date"] == "2026-08-08"
+    assert forecast[1]["date"] == "2026-08-09"
+    assert forecast[2]["date"] == "2026-08-10"
+
+    # All points equal latest observed values (day 7: spend 107.0, conv 17, clicks 57, imp 1007, rev 307.0)
+    for point in forecast:
+        assert point["spend"] == 107.0
+        assert point["conversions"] == 17
+        assert point["clicks"] == 57
+        assert point["impressions"] == 1007
+        assert point["revenue"] == 307.0
+
+
+def test_sma_7_eligibility_and_exact_calculations():
+    """17. SMA-7 calculates exact 7-day rolling mean for all additive metrics."""
+    # 7 contiguous days with spend 70, 80, 90, 100, 110, 120, 130 -> sum = 700 -> avg = 100.0
+    # Conversions: 7, 8, 9, 10, 11, 12, 13 -> sum = 70 -> avg = 10
+    # Clicks: 35, 40, 45, 50, 55, 60, 65 -> sum = 350 -> avg = 50
+    # Impressions: 700, 800, 900, 1000, 1100, 1200, 1300 -> sum = 7000 -> avg = 1000
+    # Revenue: 210, 240, 270, 300, 330, 360, 390 -> sum = 2100 -> avg = 300.0
+    data = [
+        {
+            "date": f"2026-08-0{i}",
+            "spend": float(i * 10 + 60),
+            "conversions": i + 6,
+            "clicks": (i + 6) * 5,
+            "impressions": (i * 10 + 60) * 10,
+            "revenue": float((i * 10 + 60) * 3),
+        }
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=4)
+
+    assert result["is_available"] is True
+    sma = result["models"]["sma_7"]
+    assert sma["is_eligible"] is True
+    assert len(sma["forecast"]) == 4
+
+    for point in sma["forecast"]:
+        assert point["spend"] == 100.0
+        assert point["conversions"] == 10
+        assert point["clicks"] == 50
+        assert point["impressions"] == 1000
+        assert point["revenue"] == 300.0
+
+
+def test_seasonal_naive_eligibility_14_contiguous_dates():
+    """18. Seasonal naive is eligible with 14 contiguous dates and matches prior week cycle."""
+    # 14 contiguous days from Aug 1 to Aug 14
+    data = [
+        {
+            "date": f"2026-08-{i:02d}",
+            "spend": float(100 + i * 10),
+            "conversions": i,
+            "clicks": i * 5,
+            "impressions": i * 100,
+            "revenue": float(200 + i * 20),
+        }
+        for i in range(1, 15)
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=8)
+
+    assert result["is_available"] is True
+    snaive = result["models"]["seasonal_naive"]
+    assert snaive["is_eligible"] is True
+    assert snaive["ineligibility_reason"] is None
+
+    forecast = snaive["forecast"]
+    assert len(forecast) == 8
+
+    # Day 1 of forecast (2026-08-15) must match Day 8 (2026-08-08, spend 180.0, conv 8)
+    assert forecast[0]["date"] == "2026-08-15"
+    assert forecast[0]["spend"] == 180.0
+    assert forecast[0]["conversions"] == 8
+
+    # Day 7 of forecast (2026-08-21) must match Day 14 (2026-08-14, spend 240.0, conv 14)
+    assert forecast[6]["date"] == "2026-08-21"
+    assert forecast[6]["spend"] == 240.0
+    assert forecast[6]["conversions"] == 14
+
+    # Day 8 of forecast (2026-08-22, wrap around) must match Day 8 (2026-08-08, spend 180.0, conv 8)
+    assert forecast[7]["date"] == "2026-08-22"
+    assert forecast[7]["spend"] == 180.0
+    assert forecast[7]["conversions"] == 8
+
+
+def test_seasonal_naive_rejection_of_14_rows_with_calendar_gaps():
+    """19. Seasonal naive is declined when 14 observed rows contain calendar gaps."""
+    # 14 rows spanning 16 calendar days (Aug 1-7 and Aug 10-16; missing Aug 8, Aug 9)
+    dates_part1 = [f"2026-08-0{i}" for i in range(1, 8)]
+    dates_part2 = [f"2026-08-{i:02d}" for i in range(10, 17)]
+    data = [
+        {"date": d, "spend": 100.0, "conversions": 10}
+        for d in dates_part1 + dates_part2
+    ]
+    assert len(data) == 14
+
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=7)
+
+    assert result["is_available"] is True
+    snaive = result["models"]["seasonal_naive"]
+    assert snaive["is_eligible"] is False
+    assert "calendar gaps" in snaive["ineligibility_reason"].lower()
+    assert snaive["forecast"] == []
+
+    # But naive and sma_7 are still eligible
+    assert result["models"]["naive"]["is_eligible"] is True
+    assert result["models"]["sma_7"]["is_eligible"] is True
+
+
+def test_baselines_empty_input_missing_date_and_insufficient_history():
+    """20. Handles empty input, missing date column, and insufficient history deterministically."""
+    # Empty DataFrame
+    res_empty = forecast_baselines(pd.DataFrame(), horizon=7)
+    assert res_empty["is_available"] is False
+    assert res_empty["status"] == "unavailable"
+
+    # None DataFrame
+    res_none = forecast_baselines(None, horizon=7)
+    assert res_none["is_available"] is False
+
+    # Missing date column
+    res_no_date = forecast_baselines(pd.DataFrame([{"spend": 100.0}]), horizon=7)
+    assert res_no_date["is_available"] is False
+
+    # Insufficient history: 4 dates (< 7)
+    data_short = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 5)
+    ]
+    res_short = forecast_baselines(pd.DataFrame(data_short), horizon=7)
+    assert res_short["is_available"] is False
+    assert res_short["status"] == "insufficient_history"
+    assert res_short["metadata"]["historical_dates_count"] == 4
+    for model in res_short["models"].values():
+        assert model["is_eligible"] is False
+        assert model["forecast"] == []
+
+
+def test_baselines_revenue_semantics_complete_untracked_partial_invalid():
+    """21. Revenue forecasts are null when revenue is incomplete, untracked, or invalid."""
+    # Complete revenue
+    data_comp = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "revenue": 300.0}
+        for i in range(1, 8)
+    ]
+    res_comp = forecast_baselines(pd.DataFrame(data_comp), horizon=3)
+    assert res_comp["revenue_complete"] is True
+    assert res_comp["models"]["naive"]["forecast"][0]["revenue"] == 300.0
+    assert res_comp["models"]["sma_7"]["forecast"][0]["revenue"] == 300.0
+
+    # Untracked revenue (no column)
+    data_untracked = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 8)
+    ]
+    res_untracked = forecast_baselines(pd.DataFrame(data_untracked), horizon=3)
+    assert res_untracked["revenue_complete"] is False
+    assert res_untracked["models"]["naive"]["forecast"][0]["revenue"] is None
+    assert res_untracked["models"]["sma_7"]["forecast"][0]["revenue"] is None
+    assert any("Revenue forecasting is unavailable" in w for w in res_untracked["warnings"])
+
+    # Partially missing revenue (one day has None)
+    data_partial = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "revenue": 300.0 if i < 7 else None}
+        for i in range(1, 8)
+    ]
+    res_partial = forecast_baselines(pd.DataFrame(data_partial), horizon=3)
+    assert res_partial["revenue_complete"] is False
+    assert res_partial["models"]["naive"]["forecast"][0]["revenue"] is None
+    assert res_partial["models"]["sma_7"]["forecast"][0]["revenue"] is None
+
+    # Invalid revenue string
+    data_invalid = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "revenue": 300.0 if i < 7 else "corrupted"}
+        for i in range(1, 8)
+    ]
+    res_invalid = forecast_baselines(pd.DataFrame(data_invalid), horizon=3)
+    assert res_invalid["revenue_complete"] is False
+    assert res_invalid["models"]["naive"]["forecast"][0]["revenue"] is None
+
+
+def test_baselines_observed_zero_vs_unresolved_gaps():
+    """22. Preserves observed zeros in latest observation without zero-filling gaps."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 7)
+    ]
+    # Day 7 has observed zero spend and conversions
+    data.append({"date": "2026-08-07", "spend": 0.0, "conversions": 0})
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=2)
+
+    naive_forecast = result["models"]["naive"]["forecast"]
+    assert naive_forecast[0]["spend"] == 0.0
+    assert naive_forecast[0]["conversions"] == 0
+
+
+def test_baselines_optional_clicks_impressions():
+    """23. Handles omitted clicks and impressions by defaulting to 0."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 8)
+    ]
+    result = forecast_baselines(pd.DataFrame(data), horizon=3)
+    for model in ["naive", "sma_7"]:
+        fc = result["models"][model]["forecast"]
+        for pt in fc:
+            assert pt["clicks"] == 0
+            assert pt["impressions"] == 0
+
+
+def test_baselines_invalid_horizon_rejection():
+    """24. Rejects invalid horizon values (0, negative, booleans, strings, floats) with ValueError."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+
+    invalid_horizons = [0, -1, -7, True, False, "7", "seven", 7.5, 0.0, None]
+    for h in invalid_horizons:
+        with pytest.raises(ValueError):
+            forecast_baselines(df, horizon=h)
+
+
+def test_baselines_deterministic_repeated_calls():
+    """25. Repeated calls produce identical output dictionaries."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0 * i, "conversions": 5 * i}
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+    res1 = forecast_baselines(df, horizon=5)
+    res2 = forecast_baselines(df, horizon=5)
+    res_pkg = package_forecast(df, horizon=5)
+
+    assert res1 == res2 == res_pkg
+
+
+def test_baselines_caller_dataframe_immutability():
+    """26. Caller DataFrame is not mutated in values, columns, or index."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "revenue": 200.0}
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+    df_copy = df.copy(deep=True)
+
+    forecast_baselines(df, horizon=7)
+    pd.testing.assert_frame_equal(df, df_copy)
+
+
+def test_baselines_strict_json_serialization_allow_nan_false():
+    """27. Forecast results pass strict json.dumps with allow_nan=False."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "revenue": None}
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=7)
+
+    serialized = json.dumps(result, allow_nan=False)
+    deserialized = json.loads(serialized)
+    assert deserialized["is_available"] is True
+    assert "naive" in deserialized["models"]
+    assert "sma_7" in deserialized["models"]
+
+
+def test_duplicate_date_revenue_uncertainty_preservation():
+    """28. Duplicate records on the same date preserve revenue uncertainty."""
+    # On 2026-08-01: Row 1 has revenue 100.0, Row 2 has revenue None -> date revenue must be None
+    data_partial_dup = [
+        {"date": "2026-08-01", "spend": 50.0, "conversions": 5, "revenue": 100.0},
+        {"date": "2026-08-01", "spend": 50.0, "conversions": 5, "revenue": None},
+    ]
+    res_dup = prepare_daily_series(pd.DataFrame(data_partial_dup))
+    assert res_dup["revenue_complete"] is False
+    assert res_dup["series"][0]["revenue"] is None
+
+    # On 2026-08-01: Row 1 has revenue 100.0, Row 2 has revenue 'invalid_rev' -> date revenue must be None
+    data_invalid_dup = [
+        {"date": "2026-08-01", "spend": 50.0, "conversions": 5, "revenue": 100.0},
+        {"date": "2026-08-01", "spend": 50.0, "conversions": 5, "revenue": "invalid_rev"},
+    ]
+    res_inv_dup = prepare_daily_series(pd.DataFrame(data_invalid_dup))
+    assert res_inv_dup["revenue_complete"] is False
+    assert res_inv_dup["series"][0]["revenue"] is None
+
+    # On 2026-08-01: Row 1 has revenue 100.0, Row 2 has revenue 200.0 -> date revenue is 300.0
+    data_valid_dup = [
+        {"date": "2026-08-01", "spend": 50.0, "conversions": 5, "revenue": 100.0},
+        {"date": "2026-08-01", "spend": 50.0, "conversions": 5, "revenue": 200.0},
+    ]
+    res_valid_dup = prepare_daily_series(pd.DataFrame(data_valid_dup))
+    assert res_valid_dup["revenue_complete"] is True
+    assert res_valid_dup["series"][0]["revenue"] == 300.0
+
