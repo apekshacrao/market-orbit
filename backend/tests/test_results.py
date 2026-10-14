@@ -436,6 +436,65 @@ def test_contract_trends_group_valid_dates_and_keep_unknown_revenue_null():
     assert AnalysisResultResponse.model_validate(result)
 
 
+def test_contract_response_preserves_campaign_names_with_spaces():
+    result = AnalysisService._contract_response(
+        "dataset-1",
+        {
+            "total_spend": 1750.0,
+            "total_revenue": 4200.0,
+            "overall_roas": 2.4,
+            "avg_conversion_rate": 3.8,
+            "avg_cpa": 42.5,
+        },
+        {
+            "top": [{
+                "campaign_name": "Email Campaign",
+                "spend": 750.0,
+                "revenue": 2400.0,
+                "roas": 3.2,
+            }],
+            "bottom": [
+                {
+                    "campaign_name": "Email Campaign",
+                    "spend": 750.0,
+                    "revenue": 2400.0,
+                    "roas": 3.2,
+                },
+                {
+                    "campaign_name": "Brand Awareness",
+                    "spend": 1000.0,
+                    "revenue": 1800.0,
+                    "roas": 1.8,
+                },
+            ],
+        },
+        [
+            {
+                "campaign_name": "Email Campaign",
+                "spend": 750.0,
+                "revenue": 2400.0,
+                "conversions": 18,
+                "date": "2026-10-01",
+            },
+            {
+                "campaign_name": "Brand Awareness",
+                "spend": 1000.0,
+                "revenue": 1800.0,
+                "conversions": 23,
+                "date": "2026-10-02",
+            },
+        ],
+        [],
+    )
+
+    assert result["topCampaigns"][0]["campaignName"] == "Email Campaign"
+    assert [item["campaignName"] for item in result["bottomCampaigns"]] == [
+        "Email Campaign",
+        "Brand Awareness",
+    ]
+    assert AnalysisResultResponse.model_validate(result)
+
+
 def test_cached_result_uses_contract_adapter_and_dated_source_campaigns():
     dataset = SimpleNamespace(user_id="user-1")
     cached = SimpleNamespace(
