@@ -1,32 +1,35 @@
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
 
 class KpiResponse(BaseModel):
-    total_spend: float
-    total_conversions: Optional[int] = 0
-    total_clicks: Optional[int] = 0
-    total_impressions: Optional[int] = 0
-    total_revenue: Optional[float] = None
+    totalSpend: float
+    totalRevenue: Optional[float] = None
+    overallRoas: Optional[float] = None
+    avgConversionRate: Optional[float] = None
+    avgCpa: Optional[float] = None
 
-    cpa: Optional[float] = None
-    cpc: Optional[float] = None
-    conversion_rate: Optional[float] = None
-    ctr: Optional[float] = None
+
+class CampaignPerformanceResponse(BaseModel):
+    campaignName: str
+    spend: float
+    revenue: Optional[float] = None
     roas: Optional[float] = None
-    roi: Optional[float] = None
 
-    # Backward-compatible aliases
-    avg_cpa: Optional[float] = None
-    avg_cpc: Optional[float] = None
-    avg_conversion_rate: Optional[float] = None
-    overall_roas: Optional[float] = None
+
+class TrendResponse(BaseModel):
+    date: str
+    spend: float
+    revenue: Optional[float] = None
+    conversions: int
 
 
 class AnalysisResultResponse(BaseModel):
     dataset_id: str
-    kpis: Dict[str, Any]
-    rankings: Dict[str, Any]
-    trends: Dict[str, Any]
-    ai_recommendations: List[Dict[str, Any]]
+    kpis: KpiResponse
+    performance: List[CampaignPerformanceResponse]
+    topCampaigns: List[CampaignPerformanceResponse]
+    bottomCampaigns: List[CampaignPerformanceResponse]
+    trends: List[TrendResponse]
+    recommendations: List[Dict[str, Any]]

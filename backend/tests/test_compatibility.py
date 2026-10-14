@@ -120,10 +120,9 @@ def test_end_to_end_compatibility_with_sqlalchemy_date(tmp_path):
 
     # 5. Compatible with calculate_kpis
     kpis = results["kpis"]
-    assert kpis["total_spend"] == 1500.0
-    assert kpis["total_conversions"] == 70
-    assert kpis["total_revenue"] == 3000.0
-    assert kpis["roas"] == 2.0
+    assert kpis["totalSpend"] == 1500.0
+    assert kpis["totalRevenue"] == 3000.0
+    assert kpis["overallRoas"] == 2.0
 
 
 def test_missing_revenue_kpi_compatibility(tmp_path):
@@ -144,10 +143,9 @@ def test_missing_revenue_kpi_compatibility(tmp_path):
     results = AnalysisService.get_results("ds-2", "user-1", db)
     kpis = results["kpis"]
 
-    assert kpis["total_spend"] == 400.0
-    assert kpis["total_revenue"] is None
-    assert kpis["roas"] is None
-    assert kpis["roi"] is None
+    assert kpis["totalSpend"] == 400.0
+    assert kpis["totalRevenue"] is None
+    assert kpis["overallRoas"] is None
 
 
 def test_explicit_zero_revenue_kpi_compatibility(tmp_path):
@@ -168,7 +166,6 @@ def test_explicit_zero_revenue_kpi_compatibility(tmp_path):
     results = AnalysisService.get_results("ds-3", "user-1", db)
     kpis = results["kpis"]
 
-    assert kpis["total_spend"] == 200.0
-    assert kpis["total_revenue"] == 0.0
-    assert kpis["roas"] == 0.0
-    assert kpis["roi"] == -100.0
+    assert kpis["totalSpend"] == 200.0
+    assert kpis["totalRevenue"] == 0.0
+    assert kpis["overallRoas"] == 0.0
