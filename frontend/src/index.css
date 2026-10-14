@@ -654,3 +654,58 @@ a {
   background: var(--color-primary-light);
   color: var(--color-primary);
 }
+
+.dashboard-layout {
+  display: flex;
+  min-height: calc(100vh - 72px);
+}
+
+.dashboard-content {
+  flex: 1;
+  min-width: 0;
+  padding: 40px;
+}
+
+.upload-page h1 {
+  font-size: 30px;
+  margin-bottom: 8px;
+}
+
+.upload-description {
+  color: var(--color-text-muted);
+  margin-bottom: 28px;
+}
+
+.upload-card {
+  max-width: 720px;
+  padding: 40px;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.upload-icon {
+  font-size: 42px;
+  color: var(--color-primary);
+  margin-bottom: 12px;
+}
+
+.upload-card h2 {
+  font-size: 21px;
+  margin-bottom: 8px;
+}
+
+.upload-card p {
+  color: var(--color-text-muted);
+  margin-bottom: 20px;
+}
+
+.upload-error {
+  color: var(--color-danger) !important;
+}
+
+.selected-file {
+  color: var(--color-primary) !important;
+  font-weight: 600;
+}

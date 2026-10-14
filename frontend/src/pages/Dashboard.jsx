@@ -4,6 +4,7 @@ import Sidebar from '../components/common/Sidebar';
 import KpiCards from '../components/dashboard/KpiCards';
 import CampaignRanking from '../components/dashboard/CampaignRanking';
 
+
 export default function Dashboard() {
   const topCampaigns = [
     { name: 'Summer Sale', roas: 3.6 },
@@ -18,24 +19,19 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="dashboard-page">
-      <Navbar />
+  <div className="dashboard-page">
+    <Navbar />
 
-      <div className="dashboard-layout">
-        <Sidebar />
+    <div className="dashboard-layout">
+      <Sidebar />
 
-        <main className="dashboard-content">
-          <h1>Dashboard</h1>
-          <p>Welcome to your marketing performance dashboard.</p>
-
-          <KpiCards />
-
-          <CampaignRanking
-            topCampaigns={topCampaigns}
-            bottomCampaigns={bottomCampaigns}
-          />
-        </main>
-      </div>
+      <main className="dashboard-content">
+        <h1>Dashboard</h1>
+        <p>Welcome to your marketing performance dashboard.</p>
+      </main>
     </div>
-  );
+  </div>
+);
+
+ 
 }
