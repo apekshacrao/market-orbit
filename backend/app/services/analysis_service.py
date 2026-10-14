@@ -9,11 +9,13 @@ from app.db.models.dataset import Dataset
 from app.db.models.campaign import Campaign
 from app.db.models.analysis_result import AnalysisResult
 
+from typing import Optional
+
 from analytics.preprocessing.cleaner import clean_dataset
 from analytics.kpi.metrics import calculate_kpis
 from analytics.performance.ranking import rank_campaigns
 from analytics.trends.customer_trends import analyze_trends
-from analytics.ai.groq_client import GroqClient
+from analytics.ai.service import RecommendationService
 
 
 class AnalysisService:
@@ -124,6 +126,7 @@ class AnalysisService:
         dataset_id: str,
         current_user_id: str,
         db: Session,
+        recommendation_service: Optional[RecommendationService] = None,
     ):
         # Check whether dataset exists
         dataset = (
@@ -184,12 +187,14 @@ class AnalysisService:
         rankings = rank_campaigns(df)
         trends = analyze_trends(df)
 
-        # Generate recommendations
-        groq_client = GroqClient()
-
-        recommendations = groq_client.generate_recommendations(
-            kpis,
-            rankings,
+        # Generate recommendations using unified RecommendationService
+        service = recommendation_service or RecommendationService()
+        recommendations = service.get_recommendation_list(
+            kpis=kpis,
+            rankings=rankings,
+            trends=trends,
+            df=df,
+            dataset_id=dataset_id,
         )
 
         # Store analysis result
