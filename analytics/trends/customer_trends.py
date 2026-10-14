@@ -4,6 +4,9 @@ import pandas as pd
 import numpy as np
 
 
+SUPPORTED_DIMENSIONS = ("location", "age_group", "customer_segment", "device")
+
+
 def _parse_valid_date(val: Any) -> Optional[datetime.date]:
     """Parses a date string, datetime.date, or datetime.datetime to a valid calendar date."""
     if val is None or pd.isna(val):
@@ -22,8 +25,8 @@ def _parse_valid_date(val: Any) -> Optional[datetime.date]:
         return None
 
 
-def _aggregate_daily_records(date_str: str, group: pd.DataFrame) -> Dict[str, Any]:
-    """Aggregates performance metrics for a single calendar date."""
+def _aggregate_metrics(group: pd.DataFrame) -> Dict[str, Any]:
+    """Aggregates performance metrics and calculates derived KPIs for a grouped record set."""
     spend = (
         round(float(pd.to_numeric(group["spend"], errors="coerce").fillna(0.0).sum()), 2)
         if "spend" in group.columns
@@ -81,7 +84,6 @@ def _aggregate_daily_records(date_str: str, group: pd.DataFrame) -> Dict[str, An
     )
 
     return {
-        "date": date_str,
         "spend": spend,
         "conversions": conversions,
         "clicks": clicks,
@@ -96,14 +98,22 @@ def _aggregate_daily_records(date_str: str, group: pd.DataFrame) -> Dict[str, An
     }
 
 
+def _aggregate_daily_records(date_str: str, group: pd.DataFrame) -> Dict[str, Any]:
+    """Aggregates performance metrics for a single calendar date."""
+    metrics = _aggregate_metrics(group)
+    return {"date": date_str, **metrics}
+
+
 def analyze_trends(df: pd.DataFrame) -> Dict[str, Any]:
     """
-    Analyzes historical performance trends across channels and chronological time series.
+    Analyzes historical performance trends across channels, chronological time series,
+    and multi-dimensional performance breakdowns.
 
     Returns:
         Dict with:
         - 'channel_breakdown': aggregations grouped by channel (backward-compatible).
         - 'time_series': chronological timeline, date range, availability status, and daily metrics.
+        - 'dimension_breakdowns': granular breakdowns for populated dimensions (location, age_group, customer_segment, device).
     """
     insufficient_time_series = {
         "has_time_series": False,
@@ -123,6 +133,7 @@ def analyze_trends(df: pd.DataFrame) -> Dict[str, Any]:
         return {
             "channel_breakdown": {},
             "time_series": insufficient_time_series,
+            "dimension_breakdowns": {},
         }
 
     # 1. Existing Channel Breakdown (backward-compatible)
@@ -156,80 +167,88 @@ def analyze_trends(df: pd.DataFrame) -> Dict[str, Any]:
                 "conversions": conversions,
             }
 
-    # 2. Chronological Time-Series Analysis
-    if "date" not in df.columns:
-        return {
-            "channel_breakdown": channel_trends,
-            "time_series": insufficient_time_series,
-        }
+    # 2. Dimensional Performance Breakdowns (location, age_group, customer_segment, device)
+    dimension_breakdowns: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for dim in SUPPORTED_DIMENSIONS:
+        if dim in df.columns:
+            dim_series = df[dim].apply(
+                lambda v: str(v).strip()
+                if pd.notnull(v) and str(v).strip() != "" and str(v).strip().lower() not in ("nan", "none", "nat", "null")
+                else None
+            )
+            usable_mask = dim_series.notna()
+            if usable_mask.any():
+                dim_df = df[usable_mask].copy()
+                dim_df["_category"] = dim_series[usable_mask]
 
-    # Parse and validate dates
-    parsed_dates = df["date"].apply(_parse_valid_date)
-    valid_mask = parsed_dates.notna()
+                cat_breakdown = {}
+                for category in sorted(dim_df["_category"].unique(), key=str):
+                    cat_group = dim_df[dim_df["_category"] == category]
+                    cat_breakdown[category] = _aggregate_metrics(cat_group)
 
-    if not valid_mask.any():
-        return {
-            "channel_breakdown": channel_trends,
-            "time_series": insufficient_time_series,
-        }
+                dimension_breakdowns[dim] = cat_breakdown
 
-    valid_df = df[valid_mask].copy()
-    valid_df["_parsed_date"] = parsed_dates[valid_mask]
+    # 3. Chronological Time-Series Analysis
+    time_series_data = insufficient_time_series
+    if "date" in df.columns:
+        parsed_dates = df["date"].apply(_parse_valid_date)
+        valid_mask = parsed_dates.notna()
 
-    # Group by parsed date and sort chronologically
-    grouped_by_date = {
-        d: grp for d, grp in valid_df.groupby("_parsed_date", sort=True)
-    }
+        if valid_mask.any():
+            valid_df = df[valid_mask].copy()
+            valid_df["_parsed_date"] = parsed_dates[valid_mask]
 
-    distinct_dates = sorted(grouped_by_date.keys())
-    distinct_dates_count = len(distinct_dates)
+            grouped_by_date = {
+                d: grp for d, grp in valid_df.groupby("_parsed_date", sort=True)
+            }
 
-    # Require at least 2 distinct valid calendar dates
-    if distinct_dates_count < 2:
-        return {
-            "channel_breakdown": channel_trends,
-            "time_series": {
-                "has_time_series": False,
-                "status": "insufficient_data",
-                "start_date": None,
-                "end_date": None,
-                "date_range": {
-                    "start": None,
-                    "end": None,
-                    "total_days": 0,
-                },
-                "distinct_dates_count": distinct_dates_count,
-                "timeline": [],
-            },
-        }
+            distinct_dates = sorted(grouped_by_date.keys())
+            distinct_dates_count = len(distinct_dates)
 
-    start_date_obj = distinct_dates[0]
-    end_date_obj = distinct_dates[-1]
-    start_date_str = start_date_obj.strftime("%Y-%m-%d")
-    end_date_str = end_date_obj.strftime("%Y-%m-%d")
-    total_days = (end_date_obj - start_date_obj).days + 1
+            if distinct_dates_count >= 2:
+                start_date_obj = distinct_dates[0]
+                end_date_obj = distinct_dates[-1]
+                start_date_str = start_date_obj.strftime("%Y-%m-%d")
+                end_date_str = end_date_obj.strftime("%Y-%m-%d")
+                total_days = (end_date_obj - start_date_obj).days + 1
 
-    timeline: List[Dict[str, Any]] = [
-        _aggregate_daily_records(d.strftime("%Y-%m-%d"), grouped_by_date[d])
-        for d in distinct_dates
-    ]
+                timeline: List[Dict[str, Any]] = [
+                    _aggregate_daily_records(d.strftime("%Y-%m-%d"), grouped_by_date[d])
+                    for d in distinct_dates
+                ]
 
-    time_series_data = {
-        "has_time_series": True,
-        "status": "available",
-        "start_date": start_date_str,
-        "end_date": end_date_str,
-        "date_range": {
-            "start": start_date_str,
-            "end": end_date_str,
-            "total_days": total_days,
-        },
-        "distinct_dates_count": distinct_dates_count,
-        "timeline": timeline,
-    }
+                time_series_data = {
+                    "has_time_series": True,
+                    "status": "available",
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                    "date_range": {
+                        "start": start_date_str,
+                        "end": end_date_str,
+                        "total_days": total_days,
+                    },
+                    "distinct_dates_count": distinct_dates_count,
+                    "timeline": timeline,
+                }
+            else:
+                time_series_data = {
+                    "has_time_series": False,
+                    "status": "insufficient_data",
+                    "start_date": None,
+                    "end_date": None,
+                    "date_range": {
+                        "start": None,
+                        "end": None,
+                        "total_days": 0,
+                    },
+                    "distinct_dates_count": distinct_dates_count,
+                    "timeline": [],
+                }
 
     return {
         "channel_breakdown": channel_trends,
         "time_series": time_series_data,
+        "dimension_breakdowns": dimension_breakdowns,
     }
+
 
