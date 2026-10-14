@@ -6,10 +6,12 @@ import pytest
 from analytics.forecasting.data_prep import prepare_daily_series
 from analytics.forecasting.baselines import forecast_baselines
 from analytics.forecasting.validation import validate_baselines
+from analytics.forecasting.service import run_forecasting_analysis
 from analytics.forecasting import (
     prepare_daily_series as package_entrypoint,
     forecast_baselines as package_forecast,
     validate_baselines as package_validate,
+    run_forecasting_analysis as package_service,
 )
 from analytics.kpi.metrics import calculate_kpis
 from analytics.performance.ranking import rank_campaigns
@@ -1434,6 +1436,258 @@ def test_walk_forward_untracked_metric_zero_points_no_scores():
             assert met_dict["rmse"] is None
             assert met_dict["wape"] is None
             assert met_dict["wape_status"] == "no_evaluated_points"
+
+
+def test_orchestration_fully_valid_dataset():
+    """51. Orchestration on a fully valid dataset produces 'ready' status with all components populated."""
+    # 28 days with all 5 metrics populated
+    data = [
+        {
+            "date": f"2026-08-{i:02d}",
+            "spend": float(100 + i * 5),
+            "conversions": 10 + (i % 5),
+            "clicks": 50 + i * 2,
+            "impressions": 1000 + i * 50,
+            "revenue": float(300 + i * 10),
+        }
+        for i in range(1, 29)
+    ]
+    df = pd.DataFrame(data)
+    result = run_forecasting_analysis(df, horizon=7, min_train_dates=14, step=1)
+
+    assert result["is_available"] is True
+    assert result["status"] == "ready"
+    assert result["revenue_complete"] is True
+    assert result["parameters"] == {"horizon": 7, "min_train_dates": 14, "step": 1}
+
+    # Historical coverage
+    cov = result["historical_coverage"]
+    assert cov["start_date"] == "2026-08-01"
+    assert cov["end_date"] == "2026-08-28"
+    assert cov["historical_dates_count"] == 28
+    assert cov["is_contiguous"] is True
+    assert cov["has_seasonal_dates"] is True
+    assert all(cov["metric_availability"].values())
+
+    # Forecasts
+    fc = result["forecasts"]
+    assert fc["is_available"] is True
+    assert fc["status"] == "ready"
+    assert fc["horizon"] == 7
+    assert fc["models"]["naive"]["is_eligible"] is True
+    assert fc["models"]["sma_7"]["is_eligible"] is True
+    assert fc["models"]["seasonal_naive"]["is_eligible"] is True
+    assert len(fc["models"]["seasonal_naive"]["forecast"]) == 7
+
+    # Validation
+    val = result["validation"]
+    assert val["is_available"] is True
+    assert val["status"] == "ready"
+    assert val["metadata"]["total_origins_generated"] == 14
+    assert val["models"]["seasonal_naive"]["origins_eligible"] == 14
+
+    # Strict JSON serialization
+    serialized = json.dumps(result, allow_nan=False)
+    assert isinstance(serialized, str)
+
+
+def test_orchestration_empty_and_invalid_date_inputs():
+    """52. Orchestration handles None, empty DataFrame, missing date column, and invalid dates deterministically."""
+    # Case A: None
+    res_none = run_forecasting_analysis(None)
+    assert res_none["is_available"] is False
+    assert res_none["status"] == "unavailable"
+    assert res_none["historical_coverage"]["historical_dates_count"] == 0
+    assert res_none["forecasts"]["is_available"] is False
+    assert res_none["validation"]["is_available"] is False
+    assert json.dumps(res_none, allow_nan=False)
+
+    # Case B: Empty DataFrame
+    res_empty = run_forecasting_analysis(pd.DataFrame())
+    assert res_empty["is_available"] is False
+    assert res_empty["status"] == "unavailable"
+    assert json.dumps(res_empty, allow_nan=False)
+
+    # Case C: Missing date column
+    res_no_date = run_forecasting_analysis(pd.DataFrame([{"spend": 100.0}]))
+    assert res_no_date["is_available"] is False
+    assert res_no_date["status"] == "unavailable"
+    assert any("date" in w.lower() for w in res_no_date["warnings"])
+    assert json.dumps(res_no_date, allow_nan=False)
+
+    # Case D: Unparseable dates
+    res_invalid_dates = run_forecasting_analysis(pd.DataFrame([{"date": "invalid_date", "spend": 100.0}]))
+    assert res_invalid_dates["is_available"] is False
+    assert res_invalid_dates["status"] == "no_valid_dates"
+    assert json.dumps(res_invalid_dates, allow_nan=False)
+
+
+def test_orchestration_insufficient_history():
+    """53. Orchestration returns status 'insufficient_history' when valid dates < 7."""
+    data = [{"date": f"2026-08-0{i}", "spend": 100.0} for i in range(1, 5)]
+    res = run_forecasting_analysis(pd.DataFrame(data))
+
+    assert res["is_available"] is False
+    assert res["status"] == "insufficient_history"
+    assert res["historical_coverage"]["historical_dates_count"] == 4
+    assert res["historical_coverage"]["has_minimum_dates"] is False
+    assert res["forecasts"]["is_available"] is False
+    assert res["validation"]["is_available"] is False
+    assert any("minimum 7" in w.lower() or "at least 7" in w.lower() for w in res["warnings"])
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_orchestration_ready_basic_forecast_only():
+    """54. Orchestration returns 'ready_basic_forecast_only' when forecasts exist but validation history is insufficient."""
+    # 9 contiguous days with min_train_dates=14:
+    # 9 days >= 7 -> forecasts are available (status 'ready_basic' since 9 < 14 contiguous dates)
+    # 9 dates < 15 -> validation has insufficient history (needs at least 15 dates for min_train_dates=14)
+    data = [{"date": f"2026-08-0{i}", "spend": 100.0 + i, "conversions": 10} for i in range(1, 10)]
+    res = run_forecasting_analysis(pd.DataFrame(data), min_train_dates=14)
+
+    assert res["is_available"] is True
+    assert res["status"] == "ready_basic_forecast_only"
+    assert res["forecasts"]["is_available"] is True
+    assert res["forecasts"]["status"] == "ready_basic"
+    assert res["validation"]["is_available"] is False
+    assert res["validation"]["status"] == "insufficient_history"
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_orchestration_ready_forecast_only():
+    """55. Orchestration returns 'ready_forecast_only' when seasonal forecasts exist but validation has no future dates."""
+    # 14 contiguous days with min_train_dates=14:
+    # Forecasts have 14 contiguous dates -> status 'ready' (seasonal naive is eligible)
+    # Validation has 14 dates, with min_train_dates=14 -> 0 future test dates remaining -> status 'insufficient_history'
+    data = [{"date": f"2026-08-{i:02d}", "spend": 100.0, "conversions": 10} for i in range(1, 15)]
+    res = run_forecasting_analysis(pd.DataFrame(data), min_train_dates=14)
+
+    assert res["is_available"] is True
+    assert res["status"] == "ready_forecast_only"
+    assert res["forecasts"]["is_available"] is True
+    assert res["forecasts"]["status"] == "ready"
+    assert res["forecasts"]["models"]["seasonal_naive"]["is_eligible"] is True
+    assert res["validation"]["is_available"] is False
+    assert res["validation"]["status"] == "insufficient_history"
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_orchestration_ready_basic_status():
+    """56. Orchestration returns 'ready_basic' when validation is available but seasonal naive is ineligible."""
+    # 16 dates with a calendar gap that leaves no 14-day contiguous streak:
+    # Aug 1..8 (8 days), Aug 15..22 (8 days) -> total 16 dates
+    # min_train_dates=7, horizon=2 -> validation produces origins, is available!
+    # But max_contiguous_streak is 8 < 14 -> seasonal naive ineligible in forecast_baselines.
+    dates = [f"2026-08-0{i}" for i in range(1, 9)] + [f"2026-08-{i}" for i in range(15, 23)]
+    data = [{"date": d, "spend": 100.0, "conversions": 10} for d in dates]
+    res = run_forecasting_analysis(pd.DataFrame(data), horizon=2, min_train_dates=7, step=1)
+
+    assert res["is_available"] is True
+    assert res["status"] == "ready_basic"
+    assert res["forecasts"]["is_available"] is True
+    assert res["forecasts"]["status"] == "ready_basic"
+    assert res["forecasts"]["models"]["seasonal_naive"]["is_eligible"] is False
+    assert res["validation"]["is_available"] is True
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_orchestration_untracked_metrics_and_incomplete_revenue():
+    """57. Orchestration preserves null semantics for untracked metrics and incomplete revenue."""
+    # Only spend and conversions; clicks, impressions, and revenue omitted
+    data = [{"date": f"2026-08-{i:02d}", "spend": 100.0, "conversions": 10} for i in range(1, 17)]
+    df = pd.DataFrame(data)
+    res = run_forecasting_analysis(df, horizon=2, min_train_dates=7)
+
+    assert res["is_available"] is True
+    assert res["revenue_complete"] is False
+
+    # Historical coverage metric availability
+    assert res["historical_coverage"]["metric_availability"]["spend"] == "complete"
+    assert res["historical_coverage"]["metric_availability"]["conversions"] == "complete"
+    assert res["historical_coverage"]["metric_availability"]["clicks"] == "untracked"
+    assert res["historical_coverage"]["metric_availability"]["impressions"] == "untracked"
+    assert res["historical_coverage"]["metric_availability"]["revenue"] == "untracked"
+
+    # Forecasts for untracked metrics are strictly None
+    for pt in res["forecasts"]["models"]["naive"]["forecast"]:
+        assert pt["spend"] == 100.0
+        assert pt["conversions"] == 10
+        assert pt["clicks"] is None
+        assert pt["impressions"] is None
+        assert pt["revenue"] is None
+
+    # Validation for untracked metrics has 0 points and None scores
+    naive_rev = res["validation"]["models"]["naive"]["metrics"]["revenue"]
+    assert naive_rev["points_evaluated"] == 0
+    assert naive_rev["mae"] is None
+    assert naive_rev["wape_status"] == "no_evaluated_points"
+
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_orchestration_parameter_validation():
+    """58. Orchestration rejects invalid horizon, min_train_dates, and step parameters."""
+    df = pd.DataFrame([{"date": f"2026-08-0{i}", "spend": 100.0} for i in range(1, 10)])
+
+    invalid_params = [0, -1, True, False, "7", 7.5, None]
+
+    for p in invalid_params:
+        with pytest.raises(ValueError):
+            run_forecasting_analysis(df, horizon=p)
+        with pytest.raises(ValueError):
+            run_forecasting_analysis(df, min_train_dates=p)
+        with pytest.raises(ValueError):
+            run_forecasting_analysis(df, step=p)
+
+
+def test_orchestration_determinism_and_immutability():
+    """59. Orchestration produces deterministic results and does not mutate caller DataFrame."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0 + i, "conversions": 10}
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+    df_copy = df.copy(deep=True)
+
+    res1 = run_forecasting_analysis(df, horizon=2, min_train_dates=7, step=1)
+    res2 = run_forecasting_analysis(df, horizon=2, min_train_dates=7, step=1)
+
+    # Immutability
+    pd.testing.assert_frame_equal(df, df_copy)
+
+    # Determinism
+    assert res1 == res2
+
+    # JSON roundtrip
+    serialized = json.dumps(res1, allow_nan=False)
+    deserialized = json.loads(serialized)
+    assert deserialized == res1
+
+
+def test_orchestration_warning_deduplication():
+    """60. Orchestration deduplicates diagnostic warnings while preserving encounter order."""
+    # Day 5 has missing clicks; day 1..4 have clicks
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "clicks": 50 if i != 5 else None}
+        for i in range(1, 9)
+    ]
+    df = pd.DataFrame(data)
+    res = run_forecasting_analysis(df, horizon=2, min_train_dates=7)
+
+    warnings = res["warnings"]
+    assert len(warnings) == len(set(warnings))  # All warnings must be unique
+
+
+def test_orchestration_package_export():
+    """61. run_forecasting_analysis is exposed via analytics.forecasting root."""
+    data = [{"date": f"2026-08-0{i}", "spend": 100.0} for i in range(1, 10)]
+    df = pd.DataFrame(data)
+
+    res_direct = run_forecasting_analysis(df, horizon=2, min_train_dates=7)
+    res_pkg = package_service(df, horizon=2, min_train_dates=7)
+
+    assert res_direct == res_pkg
+
 
 
 
