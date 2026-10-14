@@ -17,6 +17,13 @@ from analytics.trends.customer_trends import _parse_valid_date
 SUPPORTED_METRICS = ["spend", "conversions", "clicks", "impressions", "revenue"]
 
 
+def _validate_positive_int(val: Any, param_name: str) -> int:
+    """Validates that a parameter is a strictly positive integer, rejecting booleans, floats, strings, and non-positives."""
+    if isinstance(val, (bool, np.bool_)) or not isinstance(val, (int, np.integer)) or val <= 0:
+        raise ValueError(f"{param_name} must be a positive integer, got {val!r}")
+    return int(val)
+
+
 def _is_valid_count_value(val: Any) -> bool:
     """
     Validates whether a raw value represents a valid non-negative integer count.
@@ -29,7 +36,7 @@ def _is_valid_count_value(val: Any) -> bool:
     - Negative values (< 0)
     - Fractional values (e.g. 1.5, '2.3')
     """
-    if val is None or isinstance(val, bool) or pd.isna(val):
+    if val is None or isinstance(val, (bool, np.bool_)) or pd.isna(val):
         return False
     try:
         f = float(val)
@@ -44,12 +51,12 @@ def _is_valid_currency_value(val: Any) -> bool:
 
     Rejects:
     - None, pd.NA, np.nan
-    - Booleans (True/False)
+    - Booleans (True/False, np.bool_)
     - Non-numeric strings or unparseable objects
     - Non-finite values (inf, -inf)
     - Negative values (< 0.0)
     """
-    if val is None or isinstance(val, bool) or pd.isna(val):
+    if val is None or isinstance(val, (bool, np.bool_)) or pd.isna(val):
         return False
     try:
         f = float(val)

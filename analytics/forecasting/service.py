@@ -57,9 +57,9 @@ def run_forecasting_analysis(
         ValueError: If horizon, min_train_dates, or step is not a positive integer.
     """
     # 1. Parameter Validation
-    _validate_positive_int(horizon, "Forecast horizon")
-    _validate_positive_int(min_train_dates, "min_train_dates")
-    _validate_positive_int(step, "step")
+    horizon = _validate_positive_int(horizon, "Forecast horizon")
+    min_train_dates = _validate_positive_int(min_train_dates, "min_train_dates")
+    step = _validate_positive_int(step, "step")
 
     # 2. Daily Series Preprocessing
     prep_res = prepare_daily_series(df)

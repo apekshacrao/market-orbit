@@ -1689,6 +1689,280 @@ def test_orchestration_package_export():
     assert res_direct == res_pkg
 
 
+def test_hardening_numpy_types_rejection_and_serialization():
+    """62. Hardening: Rejects np.bool_ in metrics, accepts and normalizes np.integer parameters for JSON serialization."""
+    # A. np.bool_ in metric columns must be rejected (marked as None)
+    data = [
+        {
+            "date": "2026-08-01",
+            "spend": np.bool_(True),       # boolean in currency -> rejected to None
+            "conversions": np.bool_(True), # boolean in count -> rejected to None
+            "clicks": np.bool_(False),     # boolean in count -> rejected to None
+        },
+        {
+            "date": "2026-08-02",
+            "spend": 100.0,
+            "conversions": 10,
+            "clicks": 50,
+        },
+    ]
+    prep = prepare_daily_series(pd.DataFrame(data))
+    assert prep["series"][0]["spend"] is None
+    assert prep["series"][0]["conversions"] is None
+    assert prep["series"][0]["clicks"] is None
+    assert prep["series"][1]["spend"] == 100.0
+    assert prep["series"][1]["conversions"] == 10
+
+    # B. np.integer parameters in run_forecasting_analysis must be normalized to native int
+    df_valid = pd.DataFrame([{"date": f"2026-08-{i:02d}", "spend": 100.0} for i in range(1, 16)])
+    res = run_forecasting_analysis(
+        df_valid,
+        horizon=np.int64(7),
+        min_train_dates=np.int32(14),
+        step=np.int64(1),
+    )
+    # Must be pure Python int types
+    assert type(res["parameters"]["horizon"]) is int
+    assert type(res["parameters"]["min_train_dates"]) is int
+    assert type(res["parameters"]["step"]) is int
+    assert type(res["forecasts"]["horizon"]) is int
+    assert type(res["validation"]["parameters"]["horizon"]) is int
+
+    # Must serialize without TypeError
+    raw_json = json.dumps(res, allow_nan=False)
+    assert isinstance(raw_json, str)
+
+    # C. np.bool_ in parameters must raise ValueError
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, horizon=np.bool_(True))
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, min_train_dates=np.bool_(False))
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, step=np.bool_(True))
+
+    # D. np.float64 in parameters must raise ValueError
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, horizon=np.float64(7.0))
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, min_train_dates=np.float64(14.0))
+
+    # E. Non-positive np.integer must raise ValueError
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, horizon=np.int64(0))
+    with pytest.raises(ValueError):
+        run_forecasting_analysis(df_valid, step=np.int64(-1))
+
+
+def test_hardening_irregular_shuffled_duplicate_index_dataframe():
+    """63. Hardening: Handles shuffled dates, duplicate indexes, and multiple records per date."""
+    # Data provided completely out of order, with duplicate and string index labels,
+    # and multiple records on the same calendar day
+    raw_records = [
+        {"date": "2026-08-05", "spend": 50.0, "conversions": 5},
+        {"date": "2026-08-01", "spend": 100.0, "conversions": 10},
+        {"date": "2026-08-01", "spend": 20.0, "conversions": 2},   # Same date: sums to 120, 12
+        {"date": "2026-08-03", "spend": 70.0, "conversions": 7},
+        {"date": "2026-08-02", "spend": 60.0, "conversions": 6},
+        {"date": "2026-08-04", "spend": 80.0, "conversions": 8},
+        {"date": "2026-08-07", "spend": 90.0, "conversions": 9},
+        {"date": "2026-08-06", "spend": 40.0, "conversions": 4},
+        {"date": "2026-08-08", "spend": 110.0, "conversions": 11},
+        {"date": "2026-08-09", "spend": 130.0, "conversions": 13},
+    ]
+    # Irregular duplicate index
+    custom_index = ["row_a", "row_a", "row_b", "row_b", "row_c", "row_c", 0, 0, 100, 100]
+    df = pd.DataFrame(raw_records, index=custom_index)
+    df_copy = df.copy(deep=True)
+
+    res = run_forecasting_analysis(df, horizon=2, min_train_dates=7, step=1)
+
+    # Immutability: caller df is not mutated
+    pd.testing.assert_frame_equal(df, df_copy)
+
+    # Chronological ordering guaranteed
+    cov = res["historical_coverage"]
+    assert cov["start_date"] == "2026-08-01"
+    assert cov["end_date"] == "2026-08-09"
+    assert cov["historical_dates_count"] == 9
+    assert cov["is_contiguous"] is True
+
+    # Same day aggregation: Aug 1 spend is 100 + 20 = 120.0
+    series = prepare_daily_series(df)["series"]
+    assert series[0]["date"] == "2026-08-01"
+    assert series[0]["spend"] == 120.0
+    assert series[0]["conversions"] == 12
+
+    # Forecasts and validation proceed deterministically
+    assert res["is_available"] is True
+    assert res["status"] == "ready_basic"  # 9 dates < 14 for seasonal naive
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_hardening_all_zero_metrics_across_all_types():
+    """64. Hardening: Preserves explicit zero activity across currency, count, forecast, and validation."""
+    data = [
+        {
+            "date": f"2026-08-{i:02d}",
+            "spend": 0.0,
+            "conversions": 0,
+            "clicks": 0,
+            "impressions": 0,
+            "revenue": 0.0,
+        }
+        for i in range(1, 16)
+    ]
+    df = pd.DataFrame(data)
+    res = run_forecasting_analysis(df, horizon=2, min_train_dates=14, step=1)
+
+    assert res["is_available"] is True
+    assert res["revenue_complete"] is True
+
+    # Forecasts are explicit zeros
+    naive_pt = res["forecasts"]["models"]["naive"]["forecast"][0]
+    assert naive_pt["spend"] == 0.0
+    assert naive_pt["conversions"] == 0
+    assert naive_pt["clicks"] == 0
+    assert naive_pt["impressions"] == 0
+    assert naive_pt["revenue"] == 0.0
+
+    # Validation: actuals sum to 0 -> MAE=0.0, RMSE=0.0, WAPE is undefined null
+    val_naive = res["validation"]["models"]["naive"]["metrics"]
+    for m in ["spend", "conversions", "clicks", "impressions", "revenue"]:
+        assert val_naive[m]["points_evaluated"] == 1
+        assert val_naive[m]["mae"] == 0.0
+        assert val_naive[m]["rmse"] == 0.0
+        assert val_naive[m]["wape"] is None
+        assert val_naive[m]["wape_status"] == "undefined_zero_actuals"
+
+    # Must serialize without NaN error
+    serialized = json.dumps(res, allow_nan=False)
+    assert isinstance(serialized, str)
+
+
+def test_hardening_validation_huge_calendar_gap_zero_evaluated_points():
+    """65. Hardening: Validation with gap exceeding horizon evaluates 0 points without schema failure."""
+    # 15 distinct dates: 14 consecutive dates Aug 1..14, then a large 60-day gap, then day 15 on Oct 15
+    dates = [f"2026-08-{i:02d}" for i in range(1, 15)] + ["2026-10-15"]
+    data = [{"date": d, "spend": 100.0, "conversions": 10} for d in dates]
+    df = pd.DataFrame(data)
+
+    # min_train_dates=14, horizon=7:
+    # Origin 1 (Aug 14): projects Aug 15..21. None of these dates exist in dataset (next is Oct 15).
+    # Total evaluated points for Origin 1 = 0!
+    res = run_forecasting_analysis(df, horizon=7, min_train_dates=14, step=1)
+
+    assert res["is_available"] is True
+    assert res["validation"]["is_available"] is True
+    assert res["validation"]["status"] == "ready"
+    assert res["validation"]["metadata"]["total_origins_generated"] == 1
+
+    orig1 = res["validation"]["metadata"]["origins"][0]
+    assert orig1["origin_date"] == "2026-08-14"
+    assert orig1["observed_eval_dates_count"] == 0
+
+    val_spend = res["validation"]["models"]["naive"]["metrics"]["spend"]
+    assert val_spend["points_evaluated"] == 0
+    assert val_spend["mae"] is None
+    assert val_spend["rmse"] is None
+    assert val_spend["wape"] is None
+    assert val_spend["wape_status"] == "no_evaluated_points"
+
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_hardening_non_finite_and_extreme_numeric_values():
+    """66. Hardening: Rejects NaN, Inf, -Inf, and extreme negative numbers without contaminating series."""
+    data = [
+        {"date": "2026-08-01", "spend": float("inf"), "conversions": 10},
+        {"date": "2026-08-02", "spend": float("-inf"), "conversions": 10},
+        {"date": "2026-08-03", "spend": float("nan"), "conversions": 10},
+        {"date": "2026-08-04", "spend": -999999.0, "conversions": 10},
+        {"date": "2026-08-05", "spend": 100.0, "conversions": float("inf")},
+        {"date": "2026-08-06", "spend": 100.0, "conversions": -50},
+        {"date": "2026-08-07", "spend": 100.0, "conversions": 10},
+    ]
+    df = pd.DataFrame(data)
+    res = prepare_daily_series(df)
+
+    assert res["is_available"] is True
+    series = res["series"]
+
+    # Invalids become None, valids remain intact
+    assert series[0]["spend"] is None
+    assert series[1]["spend"] is None
+    assert series[2]["spend"] is None
+    assert series[3]["spend"] is None
+    assert series[4]["spend"] == 100.0
+    assert series[4]["conversions"] is None
+    assert series[5]["conversions"] is None
+    assert series[6]["spend"] == 100.0
+    assert series[6]["conversions"] == 10
+
+
+def test_hardening_mixed_metric_partial_untracked_combinations():
+    """67. Hardening: Independent metric isolation when some metrics are complete, partial, untracked, or invalid."""
+    # 15 days:
+    # spend: complete across all 15 days
+    # conversions: partial (None on day 3)
+    # clicks: all explicit zero
+    # impressions: corrupted string on day 7
+    # revenue: column omitted (untracked)
+    data = []
+    for i in range(1, 16):
+        data.append({
+            "date": f"2026-08-{i:02d}",
+            "spend": 100.0 + i,
+            "conversions": 10 if i != 3 else None,
+            "clicks": 0,
+            "impressions": 1000 if i != 7 else "corrupted",
+        })
+    df = pd.DataFrame(data)
+    res = run_forecasting_analysis(df, horizon=2, min_train_dates=7, step=1)
+
+    assert res["is_available"] is True
+    assert res["revenue_complete"] is False
+
+    # Historical coverage diagnoses each metric independently
+    cov = res["historical_coverage"]["metric_availability"]
+    assert cov["spend"] == "complete"
+    assert cov["conversions"] == "partial"
+    assert cov["clicks"] == "complete"
+    assert cov["impressions"] == "partial"
+    assert cov["revenue"] == "untracked"
+
+    # Spend forecasts and validation are fully functional
+    assert res["forecasts"]["models"]["naive"]["metric_status"]["spend"] == "available"
+    assert res["validation"]["models"]["naive"]["metrics"]["spend"]["points_evaluated"] > 0
+    assert res["validation"]["models"]["naive"]["metrics"]["spend"]["mae"] is not None
+
+    # Revenue is strictly None / 0 evaluated
+    assert res["forecasts"]["models"]["naive"]["metric_status"]["revenue"] == "unavailable"
+    assert res["validation"]["models"]["naive"]["metrics"]["revenue"]["points_evaluated"] == 0
+
+    assert json.dumps(res, allow_nan=False)
+
+
+def test_hardening_immutability_deep_verification():
+    """68. Hardening: Guarantees deep immutability across complex DataFrame dtypes."""
+    df = pd.DataFrame({
+        "date": [f"2026-08-{i:02d}" for i in range(1, 10)],
+        "spend": [float(100 + i) for i in range(1, 10)],
+        "conversions": [int(10 + i) for i in range(1, 10)],
+        "campaign_id": [f"cmp_{i}" for i in range(1, 10)],
+    })
+    df_snapshot = df.copy(deep=True)
+
+    res = run_forecasting_analysis(df, horizon=2, min_train_dates=7, step=1)
+
+    # DataFrame must be identical in content, index, columns, and dtypes
+    pd.testing.assert_frame_equal(df, df_snapshot)
+    assert df.index.equals(df_snapshot.index)
+    assert df.columns.equals(df_snapshot.columns)
+    for col in df.columns:
+        assert df[col].dtype == df_snapshot[col].dtype
+
+
+
 
 
 

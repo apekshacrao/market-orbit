@@ -15,6 +15,7 @@ from analytics.trends.customer_trends import _parse_valid_date
 from analytics.forecasting.data_prep import (
     prepare_daily_series,
     SUPPORTED_METRICS,
+    _validate_positive_int,
 )
 from analytics.forecasting.baselines import forecast_baselines
 
@@ -23,13 +24,6 @@ MODEL_NAMES = {
     "sma_7": "simple_moving_average_7d",
     "seasonal_naive": "seasonal_naive_7d",
 }
-
-
-def _validate_positive_int(val: Any, param_name: str) -> int:
-    """Validates that a parameter is a strictly positive integer, rejecting booleans, floats, strings, and non-positives."""
-    if isinstance(val, bool) or not isinstance(val, int) or val <= 0:
-        raise ValueError(f"{param_name} must be a positive integer, got {val!r}")
-    return val
 
 
 def validate_baselines(
@@ -69,9 +63,9 @@ def validate_baselines(
         ValueError: If horizon, min_train_dates, or step is not a positive integer.
     """
     # 1. Parameter Validation
-    _validate_positive_int(horizon, "Forecast horizon")
-    _validate_positive_int(min_train_dates, "min_train_dates")
-    _validate_positive_int(step, "step")
+    horizon = _validate_positive_int(horizon, "Forecast horizon")
+    min_train_dates = _validate_positive_int(min_train_dates, "min_train_dates")
+    step = _validate_positive_int(step, "step")
 
     empty_models = {
         key: {

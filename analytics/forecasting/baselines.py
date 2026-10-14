@@ -14,7 +14,11 @@ import datetime
 from typing import Dict, Any, List, Optional
 import pandas as pd
 
-from analytics.forecasting.data_prep import prepare_daily_series, SUPPORTED_METRICS
+from analytics.forecasting.data_prep import (
+    prepare_daily_series,
+    SUPPORTED_METRICS,
+    _validate_positive_int,
+)
 
 
 def _check_contiguous_range(dates: List[datetime.date]) -> bool:
@@ -59,8 +63,7 @@ def forecast_baselines(df: pd.DataFrame, horizon: int = 7) -> Dict[str, Any]:
         ValueError: If horizon is not a positive integer (e.g. booleans, <=0, strings, floats).
     """
     # 1. Parameter Validation
-    if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon <= 0:
-        raise ValueError(f"Forecast horizon must be a positive integer, got {horizon!r}")
+    horizon = _validate_positive_int(horizon, "Forecast horizon")
 
     # 2. Daily Series Preprocessing
     prep = prepare_daily_series(df)
