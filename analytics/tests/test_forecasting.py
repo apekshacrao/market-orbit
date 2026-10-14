@@ -211,16 +211,34 @@ def test_no_unjustified_zero_filling_or_interpolation():
 
 
 def test_optional_clicks_and_impressions():
-    """9. Optional clicks and impressions aggregation under repository semantics."""
-    # Clicks and impressions omitted
+    """9. Optional clicks and impressions aggregation under Phase 4.2.1 missing-vs-zero semantics.
+
+    Correction rationale:
+    Previously, omitted clicks and impressions columns silently defaulted to integer 0,
+    conflating untracked/missing metrics with legitimate observed zero activity. Under
+    Phase 4.2.1 hardening, omitted metrics evaluate to None, while explicit zeros are preserved as 0.
+    """
+    # Clicks and impressions omitted -> None
     data_no_ci = [
         {"date": "2026-08-01", "spend": 100.0, "conversions": 10},
     ]
     res_no_ci = prepare_daily_series(pd.DataFrame(data_no_ci))
-    assert res_no_ci["series"][0]["clicks"] == 0
-    assert res_no_ci["series"][0]["impressions"] == 0
+    assert res_no_ci["series"][0]["clicks"] is None
+    assert res_no_ci["series"][0]["impressions"] is None
+    assert res_no_ci["metadata"]["metric_availability"]["clicks"] == "untracked"
+    assert res_no_ci["metadata"]["metric_availability"]["impressions"] == "untracked"
 
-    # Clicks and impressions populated
+    # Explicit observed zeros -> preserved as integer 0
+    data_zero_ci = [
+        {"date": "2026-08-01", "spend": 100.0, "conversions": 10, "clicks": 0, "impressions": 0},
+    ]
+    res_zero = prepare_daily_series(pd.DataFrame(data_zero_ci))
+    assert res_zero["series"][0]["clicks"] == 0
+    assert res_zero["series"][0]["impressions"] == 0
+    assert res_zero["metadata"]["metric_availability"]["clicks"] == "complete"
+    assert res_zero["metadata"]["metric_availability"]["impressions"] == "complete"
+
+    # Clicks and impressions populated with valid counts
     data_with_ci = [
         {"date": "2026-08-01", "spend": 100.0, "conversions": 10, "clicks": 45, "impressions": 850},
     ]
@@ -582,17 +600,30 @@ def test_baselines_observed_zero_vs_unresolved_gaps():
 
 
 def test_baselines_optional_clicks_impressions():
-    """23. Handles omitted clicks and impressions by defaulting to 0."""
+    """23. Omitted clicks and impressions forecast as None with unavailable status.
+
+    Correction rationale:
+    Previously, omitted clicks and impressions were silently defaulted to 0 in baseline
+    forecasts. Under Phase 4.2.1 contract hardening, absent metrics produce None (JSON null)
+    and metric_status='unavailable' to avoid misleading users with synthetic zero forecasts.
+    """
     data = [
         {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
         for i in range(1, 8)
     ]
     result = forecast_baselines(pd.DataFrame(data), horizon=3)
     for model in ["naive", "sma_7"]:
-        fc = result["models"][model]["forecast"]
+        m_dict = result["models"][model]
+        assert m_dict["metric_status"]["clicks"] == "unavailable"
+        assert m_dict["metric_status"]["impressions"] == "unavailable"
+        assert m_dict["metric_status"]["spend"] == "available"
+        assert m_dict["metric_status"]["conversions"] == "available"
+        fc = m_dict["forecast"]
         for pt in fc:
-            assert pt["clicks"] == 0
-            assert pt["impressions"] == 0
+            assert pt["clicks"] is None
+            assert pt["impressions"] is None
+            assert pt["spend"] == 100.0
+            assert pt["conversions"] == 10
 
 
 def test_baselines_invalid_horizon_rejection():
@@ -680,4 +711,239 @@ def test_duplicate_date_revenue_uncertainty_preservation():
     res_valid_dup = prepare_daily_series(pd.DataFrame(data_valid_dup))
     assert res_valid_dup["revenue_complete"] is True
     assert res_valid_dup["series"][0]["revenue"] == 300.0
+
+
+def test_sma_7_rejection_on_window_calendar_gaps():
+    """29. SMA-7 is rejected when calendar gaps exist in the 7-day baseline window."""
+    # 7 distinct observed dates spanning 8 calendar days (Aug 1 to 6, then Aug 8; Aug 7 missing)
+    dates = ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-08"]
+    data = [
+        {"date": d, "spend": 100.0, "conversions": 10, "clicks": 50, "impressions": 1000}
+        for d in dates
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=3)
+
+    assert result["is_available"] is True
+    sma = result["models"]["sma_7"]
+    # Under Phase 4.2.1, SMA-7 strictly requires 7 consecutive calendar dates
+    assert sma["is_eligible"] is False
+    assert sma["forecast"] == []
+    assert "calendar gaps" in sma["ineligibility_reason"].lower()
+    for m in ["spend", "conversions", "clicks", "impressions", "revenue"]:
+        assert sma["metric_status"][m] == "ineligible"
+
+    # Naive persistence remains eligible because it only requires the latest observation
+    naive = result["models"]["naive"]
+    assert naive["is_eligible"] is True
+    assert len(naive["forecast"]) == 3
+    assert naive["forecast"][0]["date"] == "2026-08-09"
+    assert naive["forecast"][0]["spend"] == 100.0
+
+
+def test_sma_7_metric_specific_unusable_observations():
+    """30. SMA-7 marks individual unusable metrics unavailable while keeping valid metrics available."""
+    # 7 contiguous calendar days (Aug 1 to Aug 7)
+    # Spend & Conversions: valid on all 7 days
+    # Clicks: missing (None) on Aug 4
+    # Impressions: corrupted string on Aug 7
+    # Revenue: untracked
+    data = []
+    for i in range(1, 8):
+        rec = {
+            "date": f"2026-08-0{i}",
+            "spend": 100.0,
+            "conversions": 10,
+            "clicks": 50 if i != 4 else None,
+            "impressions": 1000 if i != 7 else "corrupted",
+        }
+        data.append(rec)
+
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=2)
+
+    assert result["is_available"] is True
+    sma = result["models"]["sma_7"]
+    assert sma["is_eligible"] is True  # 7 calendar days are contiguous
+    assert sma["ineligibility_reason"] is None
+
+    # Status breakdown per metric
+    assert sma["metric_status"]["spend"] == "available"
+    assert sma["metric_status"]["conversions"] == "available"
+    assert sma["metric_status"]["clicks"] == "unavailable"
+    assert sma["metric_status"]["impressions"] == "unavailable"
+    assert sma["metric_status"]["revenue"] == "unavailable"
+
+    assert sma["metric_reasons"]["clicks"] is not None
+    assert "unavailable" in sma["metric_reasons"]["clicks"].lower()
+
+    # Forecast values: valid metrics computed, unavailable metrics strictly None
+    for pt in sma["forecast"]:
+        assert pt["spend"] == 100.0
+        assert pt["conversions"] == 10
+        assert pt["clicks"] is None
+        assert pt["impressions"] is None
+        assert pt["revenue"] is None
+
+    # Check diagnostic warnings
+    warnings_text = " ".join(result["warnings"])
+    assert "clicks" in warnings_text.lower()
+    assert "impressions" in warnings_text.lower()
+
+
+def test_count_metric_validation_negative_fractional_non_finite_booleans():
+    """31. Count metric validation rejects negative, fractional, non-finite, and boolean observations."""
+    data = [
+        {"date": "2026-08-01", "spend": 100.0, "conversions": -5},                 # negative count -> None
+        {"date": "2026-08-02", "spend": 100.0, "clicks": 12.5},                     # fractional count -> None
+        {"date": "2026-08-03", "spend": 100.0, "impressions": float("inf")},         # non-finite count -> None
+        {"date": "2026-08-04", "spend": 100.0, "conversions": True},                # boolean -> None
+        {"date": "2026-08-05", "spend": 100.0, "clicks": "ten"},                    # string unparseable -> None
+        {"date": "2026-08-06", "spend": 0.0, "clicks": 0, "conversions": 0, "impressions": 0},  # explicit 0 -> 0
+        {"date": "2026-08-07", "spend": 100.0, "clicks": 10, "conversions": 5, "impressions": 100},  # valid count
+    ]
+    df = pd.DataFrame(data)
+    result = prepare_daily_series(df)
+
+    assert result["is_available"] is True
+    s = result["series"]
+
+    # Day 1: negative conversions rejected
+    assert s[0]["conversions"] is None
+    # Day 2: fractional clicks rejected
+    assert s[1]["clicks"] is None
+    # Day 3: non-finite impressions rejected
+    assert s[2]["impressions"] is None
+    # Day 4: boolean conversions rejected
+    assert s[3]["conversions"] is None
+    # Day 5: unparseable string clicks rejected
+    assert s[4]["clicks"] is None
+    # Day 6: explicit zeros preserved
+    assert s[5]["spend"] == 0.0
+    assert s[5]["clicks"] == 0
+    assert s[5]["conversions"] == 0
+    assert s[5]["impressions"] == 0
+    # Day 7: valid numbers preserved
+    assert s[6]["clicks"] == 10
+    assert s[6]["conversions"] == 5
+    assert s[6]["impressions"] == 100
+
+
+def test_sma_7_count_rounding_policy_explicit_verification():
+    """32. SMA-7 count metric rounding produces non-negative integers via standard round-half-to-even."""
+    # Case A: sum = 73 -> mean = 73/7 = 10.42857 -> round to 10
+    data_a = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10 if i < 7 else 13}
+        for i in range(1, 8)
+    ]
+    res_a = forecast_baselines(pd.DataFrame(data_a), horizon=1)
+    pt_a = res_a["models"]["sma_7"]["forecast"][0]
+    assert pt_a["conversions"] == 10
+    assert isinstance(pt_a["conversions"], int)
+
+    # Case B: sum = 74 -> mean = 74/7 = 10.57143 -> round to 11
+    data_b = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10 if i < 7 else 14}
+        for i in range(1, 8)
+    ]
+    res_b = forecast_baselines(pd.DataFrame(data_b), horizon=1)
+    pt_b = res_b["models"]["sma_7"]["forecast"][0]
+    assert pt_b["conversions"] == 11
+    assert isinstance(pt_b["conversions"], int)
+
+    # Case C: sum = 1 -> mean = 1/7 = 0.142857 -> round to 0
+    data_c = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 0 if i < 7 else 1}
+        for i in range(1, 8)
+    ]
+    res_c = forecast_baselines(pd.DataFrame(data_c), horizon=1)
+    pt_c = res_c["models"]["sma_7"]["forecast"][0]
+    assert pt_c["conversions"] == 0
+    assert isinstance(pt_c["conversions"], int)
+
+    # Case D: sum = 4 -> mean = 4/7 = 0.571429 -> round to 1
+    data_d = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 0 if i < 4 else 1}
+        for i in range(1, 8)
+    ]
+    res_d = forecast_baselines(pd.DataFrame(data_d), horizon=1)
+    pt_d = res_d["models"]["sma_7"]["forecast"][0]
+    assert pt_d["conversions"] == 1
+    assert isinstance(pt_d["conversions"], int)
+
+
+def test_seasonal_naive_metric_specific_unavailability():
+    """33. Seasonal naive marks metric unavailable if any observation in the 7-day cycle is unusable."""
+    # 14 contiguous days from Aug 1 to Aug 14
+    # Spend and clicks valid across all 14 days
+    # Conversions has None on Aug 10 (day 10, within the 7-day seasonal cycle)
+    data = [
+        {
+            "date": f"2026-08-{i:02d}",
+            "spend": float(100 + i * 10),
+            "conversions": i if i != 10 else None,
+            "clicks": i * 5,
+            "impressions": i * 100,
+        }
+        for i in range(1, 15)
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=7)
+
+    assert result["is_available"] is True
+    snaive = result["models"]["seasonal_naive"]
+    assert snaive["is_eligible"] is True
+
+    # Spend & clicks available; conversions unavailable
+    assert snaive["metric_status"]["spend"] == "available"
+    assert snaive["metric_status"]["clicks"] == "available"
+    assert snaive["metric_status"]["impressions"] == "available"
+    assert snaive["metric_status"]["conversions"] == "unavailable"
+
+    forecast = snaive["forecast"]
+    assert len(forecast) == 7
+    for pt in forecast:
+        assert pt["spend"] is not None
+        assert pt["clicks"] is not None
+        assert pt["conversions"] is None  # Unavailable metric forecasts as None
+
+
+def test_negative_spend_and_currency_validation():
+    """34. Currency validation rejects negative and non-finite spend values."""
+    data = [
+        {"date": "2026-08-01", "spend": -100.0, "conversions": 10},  # negative spend -> None
+        {"date": "2026-08-02", "spend": float("nan"), "conversions": 10},  # nan spend -> None
+        {"date": "2026-08-03", "spend": 0.0, "conversions": 10},  # explicit 0.0 -> 0.0
+    ]
+    res = prepare_daily_series(pd.DataFrame(data))
+    assert res["is_available"] is True
+    assert res["series"][0]["spend"] is None
+    assert res["series"][1]["spend"] is None
+    assert res["series"][2]["spend"] == 0.0
+
+
+def test_full_json_serialization_with_null_and_zero_metrics():
+    """35. Strict JSON serialization handles mixed null, zero, and active metric forecasts."""
+    # Mix of active, zero, and untracked metrics
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 0, "clicks": None}
+        for i in range(1, 8)
+    ]
+    df = pd.DataFrame(data)
+    result = forecast_baselines(df, horizon=5)
+
+    # Must serialize without error under allow_nan=False
+    raw_json = json.dumps(result, allow_nan=False)
+    parsed = json.loads(raw_json)
+
+    # Verify JSON literal types
+    assert parsed["is_available"] is True
+    for model_name in ["naive", "sma_7"]:
+        fc = parsed["models"][model_name]["forecast"]
+        for pt in fc:
+            assert pt["spend"] == 100.0
+            assert pt["conversions"] == 0   # literal integer 0
+            assert pt["clicks"] is None      # literal JSON null
+            assert pt["revenue"] is None     # literal JSON null
+
 

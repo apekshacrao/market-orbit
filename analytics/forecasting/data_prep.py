@@ -7,11 +7,93 @@ forecasting models.
 """
 
 import datetime
+import math
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
 
 from analytics.trends.customer_trends import _parse_valid_date
+
+SUPPORTED_METRICS = ["spend", "conversions", "clicks", "impressions", "revenue"]
+
+
+def _is_valid_count_value(val: Any) -> bool:
+    """
+    Validates whether a raw value represents a valid non-negative integer count.
+
+    Rejects:
+    - None, pd.NA, np.nan
+    - Booleans (True/False)
+    - Non-numeric strings or unparseable objects
+    - Non-finite values (inf, -inf)
+    - Negative values (< 0)
+    - Fractional values (e.g. 1.5, '2.3')
+    """
+    if val is None or isinstance(val, bool) or pd.isna(val):
+        return False
+    try:
+        f = float(val)
+        return math.isfinite(f) and f >= 0.0 and f.is_integer()
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _is_valid_currency_value(val: Any) -> bool:
+    """
+    Validates whether a raw value represents a valid non-negative currency amount.
+
+    Rejects:
+    - None, pd.NA, np.nan
+    - Booleans (True/False)
+    - Non-numeric strings or unparseable objects
+    - Non-finite values (inf, -inf)
+    - Negative values (< 0.0)
+    """
+    if val is None or isinstance(val, bool) or pd.isna(val):
+        return False
+    try:
+        f = float(val)
+        return math.isfinite(f) and f >= 0.0
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _aggregate_count_metric(grp: pd.DataFrame, col: str) -> Optional[int]:
+    """
+    Aggregates a count metric column for a single calendar date.
+
+    Returns:
+    - None if the column is absent, empty, or contains any invalid/missing/negative/fractional row.
+    - int(sum) if all rows on this date have valid non-negative integer counts.
+    """
+    if col not in grp.columns:
+        return None
+    series = grp[col]
+    if series.empty:
+        return None
+    for val in series:
+        if not _is_valid_count_value(val):
+            return None
+    return int(sum(int(round(float(v))) for v in series))
+
+
+def _aggregate_currency_metric(grp: pd.DataFrame, col: str) -> Optional[float]:
+    """
+    Aggregates a currency metric column for a single calendar date.
+
+    Returns:
+    - None if the column is absent, empty, or contains any invalid/missing/negative row.
+    - round(float(sum), 2) if all rows on this date have valid non-negative currency values.
+    """
+    if col not in grp.columns:
+        return None
+    series = grp[col]
+    if series.empty:
+        return None
+    for val in series:
+        if not _is_valid_currency_value(val):
+            return None
+    return round(float(sum(float(v) for v in series)), 2)
 
 
 def prepare_daily_series(df: pd.DataFrame) -> Dict[str, Any]:
@@ -46,6 +128,7 @@ def prepare_daily_series(df: pd.DataFrame) -> Dict[str, Any]:
         "has_seasonal_dates": False,
         "excluded_records_count": 0,
         "total_records_count": 0,
+        "metric_availability": {m: "untracked" for m in SUPPORTED_METRICS},
     }
 
     if df is None or df.empty or "date" not in df.columns:
@@ -90,12 +173,10 @@ def prepare_daily_series(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Determine overall revenue completeness across all valid-date rows
     revenue_complete = False
-    if "revenue" in valid_df.columns:
+    if "revenue" in valid_df.columns and not valid_df.empty:
         rev_series = valid_df["revenue"]
-        if not rev_series.isna().all() and not rev_series.isna().any():
-            rev_num = pd.to_numeric(rev_series, errors="coerce")
-            if not rev_num.isna().any():
-                revenue_complete = True
+        if not rev_series.empty and all(_is_valid_currency_value(v) for v in rev_series):
+            revenue_complete = True
 
     if not revenue_complete:
         if "revenue" not in valid_df.columns or valid_df["revenue"].isna().all():
@@ -160,35 +241,11 @@ def prepare_daily_series(df: pd.DataFrame) -> Dict[str, Any]:
         grp = grouped_by_date[d]
         date_str = d.strftime("%Y-%m-%d")
 
-        spend = (
-            round(float(pd.to_numeric(grp["spend"], errors="coerce").fillna(0.0).sum()), 2)
-            if "spend" in grp.columns
-            else 0.0
-        )
-        conversions = (
-            int(pd.to_numeric(grp["conversions"], errors="coerce").fillna(0).sum())
-            if "conversions" in grp.columns
-            else 0
-        )
-        clicks = (
-            int(pd.to_numeric(grp["clicks"], errors="coerce").fillna(0).sum())
-            if "clicks" in grp.columns
-            else 0
-        )
-        impressions = (
-            int(pd.to_numeric(grp["impressions"], errors="coerce").fillna(0).sum())
-            if "impressions" in grp.columns
-            else 0
-        )
-
-        # Revenue aggregation per date: only populate if all rows for this date have valid numbers
-        date_revenue: Optional[float] = None
-        if "revenue" in grp.columns:
-            s_rev = grp["revenue"]
-            if not s_rev.isna().all() and not s_rev.isna().any():
-                s_rev_num = pd.to_numeric(s_rev, errors="coerce")
-                if not s_rev_num.isna().any():
-                    date_revenue = round(float(s_rev_num.sum()), 2)
+        spend = _aggregate_currency_metric(grp, "spend")
+        conversions = _aggregate_count_metric(grp, "conversions")
+        clicks = _aggregate_count_metric(grp, "clicks")
+        impressions = _aggregate_count_metric(grp, "impressions")
+        date_revenue = _aggregate_currency_metric(grp, "revenue")
 
         series.append({
             "date": date_str,
@@ -199,6 +256,20 @@ def prepare_daily_series(df: pd.DataFrame) -> Dict[str, Any]:
             "revenue": date_revenue,
             "is_observed": True,
         })
+
+    # Diagnostic availability across metrics
+    metric_availability: Dict[str, str] = {}
+    for m in SUPPORTED_METRICS:
+        if m not in valid_df.columns:
+            metric_availability[m] = "untracked"
+        else:
+            valid_cnt = sum(1 for s in series if s[m] is not None)
+            if valid_cnt == len(series) and len(series) > 0:
+                metric_availability[m] = "complete"
+            elif valid_cnt > 0:
+                metric_availability[m] = "partial"
+            else:
+                metric_availability[m] = "untracked"
 
     metadata = {
         "historical_dates_count": historical_dates_count,
@@ -213,6 +284,7 @@ def prepare_daily_series(df: pd.DataFrame) -> Dict[str, Any]:
         "has_seasonal_dates": has_seasonal_dates,
         "excluded_records_count": excluded_records_count,
         "total_records_count": total_records,
+        "metric_availability": metric_availability,
     }
 
     return {
