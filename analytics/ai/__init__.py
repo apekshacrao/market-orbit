@@ -14,7 +14,19 @@ from analytics.ai.groq_client import (
     GroqAPIError as GroqAPIError,
     load_groq_config as load_groq_config,
 )
-from analytics.ai.prompts import RECOMMENDATION_PROMPT_TEMPLATE as RECOMMENDATION_PROMPT_TEMPLATE
+from analytics.ai.prompts import (
+    RECOMMENDATION_PROMPT_TEMPLATE as RECOMMENDATION_PROMPT_TEMPLATE,
+    RECOMMENDATION_SYSTEM_PROMPT as RECOMMENDATION_SYSTEM_PROMPT,
+    build_system_prompt as build_system_prompt,
+    build_user_prompt as build_user_prompt,
+    build_recommendation_prompt_messages as build_recommendation_prompt_messages,
+    format_legacy_prompt as format_legacy_prompt,
+)
+from analytics.ai.context import (
+    build_analytics_context as build_analytics_context,
+    serialize_analytics_context as serialize_analytics_context,
+    sanitize_untrusted_string as sanitize_untrusted_string,
+)
 from analytics.insights.generator import generate_insights as generate_insights
 from analytics.ai.schemas import (
     RecommendationCategory as RecommendationCategory,
@@ -41,6 +53,14 @@ __all__ = [
     "GroqAPIError",
     "load_groq_config",
     "RECOMMENDATION_PROMPT_TEMPLATE",
+    "RECOMMENDATION_SYSTEM_PROMPT",
+    "build_system_prompt",
+    "build_user_prompt",
+    "build_recommendation_prompt_messages",
+    "format_legacy_prompt",
+    "build_analytics_context",
+    "serialize_analytics_context",
+    "sanitize_untrusted_string",
     "generate_insights",
     "RecommendationCategory",
     "RecommendationSource",
