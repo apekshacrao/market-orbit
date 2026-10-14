@@ -17,11 +17,18 @@ class Settings(BaseSettings):
     ]
 
     GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_TIMEOUT: float = 15.0
+    GROQ_MAX_RETRIES: int = 2
 
     model_config = SettingsConfigDict(
-        env_file="backend/.env",
+        env_file=[
+            "backend/.env",
+            ".env",
+        ],
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
 
