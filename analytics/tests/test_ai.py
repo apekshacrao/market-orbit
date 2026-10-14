@@ -70,6 +70,17 @@ from analytics.ai.pipeline import (
     PipelineParsingError,
     PipelineValidationError,
 )
+from analytics.ai.fallback import (
+    map_insight_to_recommendation,
+    convert_insights_to_recommendations,
+    generate_fallback_recommendations,
+)
+from analytics.ai.service import (
+    RecommendationService,
+    get_recommendation_service,
+    get_recommendations,
+    get_recommendation_list,
+)
 import analytics.ai as ai_package
 
 
@@ -597,6 +608,10 @@ def test_backend_response_compatibility():
 def test_client_initialization_defaults(monkeypatch):
     """Verify GroqClient initializes with default model, timeout, and retries."""
     monkeypatch.setenv("GROQ_API_KEY", "test_key_abc123")
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    if "app.core.config" in sys.modules:
+        monkeypatch.setattr(sys.modules["app.core.config"].settings, "GROQ_MODEL", "")
+    monkeypatch.setattr("dotenv.dotenv_values", lambda p: {})
     client = GroqClient()
 
     assert client.model == DEFAULT_GROQ_MODEL
@@ -683,7 +698,7 @@ def test_load_groq_config_environment_precedence(monkeypatch):
 
 def test_chat_completion_success_mocked():
     """Verify chat_completion successfully extracts response content from a mocked Groq provider."""
-    client = GroqClient(api_key="mock_test_key_123")
+    client = GroqClient(api_key="mock_test_key_123", model=DEFAULT_GROQ_MODEL)
 
     mock_sdk_client = MagicMock()
     mock_choice = MagicMock()
@@ -1711,6 +1726,7 @@ def test_load_groq_config_root_env_discovery(tmp_path, monkeypatch):
     # Clear cached settings in backend config if already imported
     if "app.core.config" in sys.modules:
         monkeypatch.setattr(sys.modules["app.core.config"].settings, "GROQ_API_KEY", "")
+        monkeypatch.setattr(sys.modules["app.core.config"].settings, "GROQ_MODEL", "")
 
     # Create temporary root with .env
     root_env = tmp_path / ".env"
@@ -1987,5 +2003,396 @@ def test_package_exports_for_phase_5_5():
     assert hasattr(ai_package, "PipelineProviderError")
     assert hasattr(ai_package, "PipelineParsingError")
     assert hasattr(ai_package, "PipelineValidationError")
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.6: Deterministic Fallback Engine & Unified Service Tests
+# ---------------------------------------------------------------------------
+
+def test_fallback_conversion_all_supported_insight_types():
+    """Verify correct conversion of all supported deterministic insight types to RecommendationItem contracts."""
+    insights = [
+        {
+            "id": "insight-001",
+            "type": "data_quality",
+            "title": "Revenue Tracking Incomplete",
+            "description": "Revenue data is untracked across campaigns.",
+            "metric": "revenue",
+            "evidence": {"total_revenue": None, "total_spend": 500.0},
+        },
+        {
+            "id": "insight-002",
+            "type": "data_quality",
+            "title": "Partial Revenue Tracking",
+            "description": "Revenue is tracked for only 3 of 5 campaigns.",
+            "metric": "revenue",
+            "evidence": {"observed_revenue": 1500.0, "tracked_campaigns_count": 3, "total_campaigns": 5},
+        },
+        {
+            "id": "insight-003",
+            "type": "data_quality",
+            "title": "Insufficient Date Coverage for Trend Analysis",
+            "description": "Observed data contains 1 distinct calendar date.",
+            "metric": "date",
+            "evidence": {"distinct_dates_count": 1, "required_minimum_dates": 2},
+        },
+        {
+            "id": "insight-004",
+            "type": "campaign_performance",
+            "title": "Top Conversion Driver: Search_Alpha",
+            "description": "Search_Alpha generated highest conversion volume with 45 conversions.",
+            "metric": "conversions",
+            "evidence": {"campaign_name": "Search_Alpha", "conversions": 45, "spend": 400.0},
+        },
+        {
+            "id": "insight-005",
+            "type": "campaign_performance",
+            "title": "Zero-Conversion Spend: Display_Zero",
+            "description": "Display_Zero recorded $250.00 spend with 0 conversions.",
+            "metric": "spend",
+            "evidence": {"campaign_name": "Display_Zero", "spend": 250.0, "conversions": 0},
+        },
+        {
+            "id": "insight-006",
+            "type": "cost_efficiency",
+            "title": "Lowest Cost per Acquisition: Search_Alpha",
+            "description": "Search_Alpha achieved most cost-effective acquisition at $8.89 per conversion.",
+            "metric": "cpa",
+            "evidence": {"campaign_name": "Search_Alpha", "cpa": 8.89, "conversions": 45},
+        },
+        {
+            "id": "insight-007",
+            "type": "cost_efficiency",
+            "title": "Highest Cost per Acquisition: Video_Beta",
+            "description": "Video_Beta recorded highest cost per acquisition at $65.00.",
+            "metric": "cpa",
+            "evidence": {"campaign_name": "Video_Beta", "cpa": 65.0, "conversions": 3},
+        },
+        {
+            "id": "insight-008",
+            "type": "revenue_efficiency",
+            "title": "Top Return on Ad Spend: Search_Alpha",
+            "description": "Search_Alpha delivered highest return on ad spend at 3.75x ROAS.",
+            "metric": "roas",
+            "evidence": {"campaign_name": "Search_Alpha", "roas": 3.75, "revenue": 1500.0},
+        },
+        {
+            "id": "insight-009",
+            "type": "revenue_efficiency",
+            "title": "Lowest Return on Ad Spend: Social_Gamma",
+            "description": "Social_Gamma recorded lowest return on ad spend at 0.80x ROAS.",
+            "metric": "roas",
+            "evidence": {"campaign_name": "Social_Gamma", "roas": 0.80, "revenue": 160.0},
+        },
+        {
+            "id": "insight-010",
+            "type": "dimensional",
+            "title": "Leading Channel by Conversions: Google Search",
+            "description": "Within channel, Google Search led with 60 conversions.",
+            "metric": "conversions",
+            "evidence": {"dimension": "channel", "category": "Google Search", "conversions": 60},
+        },
+        {
+            "id": "insight-011",
+            "type": "dimensional",
+            "title": "Most Cost-Effective Channel: Google Search",
+            "description": "Within channel, Google Search achieved lowest CPA at $12.50.",
+            "metric": "cpa",
+            "evidence": {"dimension": "channel", "category": "Google Search", "cpa": 12.50},
+        },
+        {
+            "id": "insight-012",
+            "type": "time_series",
+            "title": "Timeline Progression: 2026-03-01 to 2026-03-14",
+            "description": "Across 14 dates, daily spend shifted.",
+            "metric": "conversions",
+            "evidence": {"start_date": "2026-03-01", "end_date": "2026-03-14", "distinct_dates_count": 14},
+        },
+        {
+            "id": "insight-013",
+            "type": "time_series",
+            "title": "Peak Conversion Date: 2026-03-10",
+            "description": "Highest daily conversion volume occurred on 2026-03-10.",
+            "metric": "conversions",
+            "evidence": {"date": "2026-03-10", "conversions": 18, "spend": 120.0},
+        },
+    ]
+
+    batch = convert_insights_to_recommendations(insights, dataset_id="ds-test-insights")
+    assert isinstance(batch, RecommendationBatch)
+    assert len(batch.recommendations) == 13
+    assert batch.dataset_id == "ds-test-insights"
+
+    # All items must have source=deterministic_fallback
+    for rec in batch.recommendations:
+        assert rec.source == RecommendationSource.DETERMINISTIC_FALLBACK
+        assert rec.description == rec.rationale
+        assert len(rec.action) > 10
+
+    # Specific category checks
+    assert batch.recommendations[0].category == RecommendationCategory.DATA_TRACKING
+    assert batch.recommendations[1].category == RecommendationCategory.DATA_TRACKING
+    assert batch.recommendations[2].category == RecommendationCategory.DATA_TRACKING
+    assert batch.recommendations[3].category == RecommendationCategory.CHANNEL_SCALING
+    assert batch.recommendations[4].category == RecommendationCategory.WASTE_REDUCTION
+    assert batch.recommendations[5].category == RecommendationCategory.BUDGET_ALLOCATION
+    assert batch.recommendations[6].category == RecommendationCategory.WASTE_REDUCTION
+    assert batch.recommendations[7].category == RecommendationCategory.BUDGET_ALLOCATION
+    assert batch.recommendations[8].category == RecommendationCategory.WASTE_REDUCTION
+    assert batch.recommendations[9].category == RecommendationCategory.CHANNEL_SCALING
+    assert batch.recommendations[10].category == RecommendationCategory.BUDGET_ALLOCATION
+    assert batch.recommendations[11].category == RecommendationCategory.BUDGET_ALLOCATION
+    assert batch.recommendations[12].category == RecommendationCategory.CREATIVE_OPTIMIZATION
+
+
+def test_fallback_missing_vs_zero_revenue_semantics():
+    """Verify fallback preserves None for untracked revenue and 0.0 for explicitly zero revenue."""
+    # Untracked revenue insight
+    untracked_insight = {
+        "id": "ins-untracked",
+        "type": "data_quality",
+        "title": "Revenue Tracking Incomplete",
+        "description": "Revenue data is untracked across campaigns.",
+        "metric": "revenue",
+        "evidence": {"total_revenue": None, "total_spend": 250.0},
+    }
+    rec_untracked = map_insight_to_recommendation(untracked_insight)
+    assert rec_untracked.supporting_evidence.observed_value is None
+    assert "Revenue is untracked" in rec_untracked.limitations[0]
+
+    # Explicit 0.0 ROAS insight
+    zero_roas_insight = {
+        "id": "ins-zero-roas",
+        "type": "revenue_efficiency",
+        "title": "Lowest Return on Ad Spend: Camp_Zero_Rev",
+        "description": "Camp_Zero_Rev recorded lowest return on ad spend at 0.00x ROAS.",
+        "metric": "roas",
+        "evidence": {"campaign_name": "Camp_Zero_Rev", "roas": 0.0, "revenue": 0.0, "spend": 100.0},
+    }
+    rec_zero = map_insight_to_recommendation(zero_roas_insight)
+    assert rec_zero.supporting_evidence.observed_value == 0.0
+    assert rec_zero.category == RecommendationCategory.WASTE_REDUCTION
+
+
+def test_fallback_empty_insights_handling():
+    """Verify empty insight lists produce valid empty RecommendationBatch instances."""
+    batch_empty = convert_insights_to_recommendations([])
+    assert isinstance(batch_empty, RecommendationBatch)
+    assert len(batch_empty.recommendations) == 0
+
+    batch_derived = generate_fallback_recommendations(kpis={}, rankings={}, trends={})
+    assert isinstance(batch_derived, RecommendationBatch)
+    assert len(batch_derived.recommendations) == 0
+
+
+def test_fallback_malformed_insight_data_raises_error():
+    """Verify malformed deterministic insight data raises ValueError and is not disguised as valid."""
+    # Non-dict item
+    with pytest.raises(ValueError, match="Insight must be a dictionary"):
+        map_insight_to_recommendation("not_a_dict")
+
+    # Missing title
+    with pytest.raises(ValueError, match="missing a valid non-empty 'title'"):
+        map_insight_to_recommendation({"type": "data_quality", "description": "Desc"})
+
+    # Missing description
+    with pytest.raises(ValueError, match="missing a valid non-empty 'description'"):
+        map_insight_to_recommendation({"type": "data_quality", "title": "Title"})
+
+    # Unrecognized type
+    with pytest.raises(ValueError, match="Unrecognized deterministic insight type"):
+        map_insight_to_recommendation({"type": "magic_ai_type", "title": "T", "description": "D"})
+
+
+def test_unified_service_groq_unconfigured_routes_to_fallback():
+    """Verify unified service routes to deterministic fallback when Groq client is unconfigured."""
+    client = GroqClient(api_key="")
+    service = RecommendationService(client=client)
+
+    insights = [
+        {
+            "id": "ins-01",
+            "type": "campaign_performance",
+            "title": "Top Conversion Driver: Search_Campaign",
+            "description": "Search_Campaign drove 50 conversions.",
+            "metric": "conversions",
+            "evidence": {"campaign_name": "Search_Campaign", "conversions": 50, "spend": 500.0},
+        }
+    ]
+
+    batch = service.get_recommendations(
+        kpis={"total_spend": 500.0},
+        insights=insights,
+        dataset_id="ds-unconfigured",
+    )
+
+    assert isinstance(batch, RecommendationBatch)
+    assert len(batch.recommendations) == 1
+    rec = batch.recommendations[0]
+    assert rec.source == RecommendationSource.DETERMINISTIC_FALLBACK
+    assert rec.category == RecommendationCategory.CHANNEL_SCALING
+    assert rec.title == "Top Conversion Driver: Search_Campaign"
+
+
+def test_unified_service_groq_success_returns_live():
+    """Verify unified service returns live LLM recommendations when Groq succeeds."""
+    client = GroqClient(api_key="mock_key")
+    mock_llm_json = json.dumps([
+        {
+            "id": "rec-live-01",
+            "category": "budget_allocation",
+            "title": "Scale Google Search Live",
+            "action": "Increase Search budget by 25%",
+            "rationale": "High observed ROAS from live inference.",
+            "source": "groq_llm",
+        }
+    ])
+    client.chat_completion = MagicMock(return_value=mock_llm_json)
+
+    service = RecommendationService(client=client)
+    batch = service.get_recommendations(
+        kpis={"total_spend": 500.0},
+        rankings={"top": []},
+        dataset_id="ds-live-success",
+    )
+
+    assert isinstance(batch, RecommendationBatch)
+    assert len(batch.recommendations) == 1
+    assert batch.recommendations[0].source == RecommendationSource.GROQ_LLM
+    assert batch.recommendations[0].title == "Scale Google Search Live"
+
+
+def test_unified_service_groq_failures_trigger_fallback():
+    """Verify unified service falls back to deterministic recommendations upon Groq provider and parsing errors."""
+    client = GroqClient(api_key="mock_key")
+
+    fallback_insights = [
+        {
+            "id": "ins-fb-01",
+            "type": "cost_efficiency",
+            "title": "Lowest Cost per Acquisition: Search_Alpha",
+            "description": "Search_Alpha achieved lowest CPA at $10.00.",
+            "metric": "cpa",
+            "evidence": {"campaign_name": "Search_Alpha", "cpa": 10.0, "conversions": 20},
+        }
+    ]
+
+    service = RecommendationService(client=client)
+
+    # 1. GroqAuthenticationError -> Fallback
+    client.chat_completion = MagicMock(side_effect=GroqAuthenticationError("Invalid API Key 401"))
+    batch_auth = service.get_recommendations(kpis={"total_spend": 100.0}, insights=fallback_insights)
+    assert batch_auth.recommendations[0].source == RecommendationSource.DETERMINISTIC_FALLBACK
+
+    # 2. GroqRateLimitError -> Fallback
+    client.chat_completion = MagicMock(side_effect=GroqRateLimitError("Rate limit exceeded 429"))
+    batch_rate = service.get_recommendations(kpis={"total_spend": 100.0}, insights=fallback_insights)
+    assert batch_rate.recommendations[0].source == RecommendationSource.DETERMINISTIC_FALLBACK
+
+    # 3. Malformed JSON / Parsing error -> Fallback
+    client.chat_completion = MagicMock(return_value="not valid json at all")
+    batch_parse = service.get_recommendations(kpis={"total_spend": 100.0}, insights=fallback_insights)
+    assert batch_parse.recommendations[0].source == RecommendationSource.DETERMINISTIC_FALLBACK
+
+    # 4. Schema validation error -> Fallback
+    client.chat_completion = MagicMock(return_value='[{"id": "1", "category": "invalid_cat_xyz"}]')
+    batch_val = service.get_recommendations(kpis={"total_spend": 100.0}, insights=fallback_insights)
+    assert batch_val.recommendations[0].source == RecommendationSource.DETERMINISTIC_FALLBACK
+
+
+def test_unified_service_force_fallback_flag():
+    """Verify force_fallback=True bypasses Groq entirely even when client is configured."""
+    client = GroqClient(api_key="mock_key")
+    client.chat_completion = MagicMock()
+
+    service = RecommendationService(client=client)
+    insights = [
+        {
+            "id": "ins-forced",
+            "type": "campaign_performance",
+            "title": "Top Conversion Driver: Force_Camp",
+            "description": "Force_Camp had high conversions.",
+            "metric": "conversions",
+            "evidence": {"campaign_name": "Force_Camp", "conversions": 10},
+        }
+    ]
+
+    batch = service.get_recommendations(
+        kpis={"total_spend": 200.0},
+        insights=insights,
+        force_fallback=True,
+    )
+
+    assert len(batch.recommendations) == 1
+    assert batch.recommendations[0].source == RecommendationSource.DETERMINISTIC_FALLBACK
+    client.chat_completion.assert_not_called()
+
+
+def test_unified_service_get_recommendation_list_compatibility():
+    """Verify get_recommendation_list returns serialized dictionaries conforming to backend expectations."""
+    client = GroqClient(api_key="")
+    insights = [
+        {
+            "id": "ins-list",
+            "type": "data_quality",
+            "title": "Revenue Tracking Incomplete",
+            "description": "Revenue data is untracked across campaigns.",
+            "metric": "revenue",
+            "evidence": {"total_revenue": None},
+        }
+    ]
+
+    rec_list = get_recommendation_list(
+        kpis={"total_spend": 100.0},
+        insights=insights,
+        client=client,
+    )
+
+    assert isinstance(rec_list, list)
+    assert len(rec_list) == 1
+    item = rec_list[0]
+    assert isinstance(item, dict)
+    assert item["id"] == "ins-list"
+    assert item["category"] == "data_tracking"
+    assert item["source"] == "deterministic_fallback"
+    assert "description" in item
+    assert "action" in item
+
+
+def test_fallback_batch_json_serialization_round_trip():
+    """Verify deterministic fallback RecommendationBatch serializes cleanly to JSON and round-trips."""
+    insights = [
+        {
+            "id": "ins-serial",
+            "type": "cost_efficiency",
+            "title": "Lowest Cost per Acquisition: Search_Pro",
+            "description": "Search_Pro achieved lowest CPA at $9.50.",
+            "metric": "cpa",
+            "evidence": {"campaign_name": "Search_Pro", "cpa": 9.50, "conversions": 30},
+        }
+    ]
+    batch = convert_insights_to_recommendations(insights, dataset_id="ds-serial-test")
+    json_str = batch.to_json()
+
+    assert "deterministic_fallback" in json_str
+    assert "Search_Pro" in json_str
+
+    # Round trip
+    reloaded_batch = RecommendationBatch.model_validate_json(json_str)
+    assert len(reloaded_batch.recommendations) == 1
+    assert reloaded_batch.recommendations[0].category == RecommendationCategory.BUDGET_ALLOCATION
+    assert reloaded_batch.recommendations[0].source == RecommendationSource.DETERMINISTIC_FALLBACK
+
+
+def test_package_exports_for_phase_5_6():
+    """Verify all Phase 5.6 functions and classes are cleanly exported from analytics.ai."""
+    assert hasattr(ai_package, "map_insight_to_recommendation")
+    assert hasattr(ai_package, "convert_insights_to_recommendations")
+    assert hasattr(ai_package, "generate_fallback_recommendations")
+    assert hasattr(ai_package, "RecommendationService")
+    assert hasattr(ai_package, "get_recommendation_service")
+    assert hasattr(ai_package, "get_recommendations")
+    assert hasattr(ai_package, "get_recommendation_list")
+
 
 

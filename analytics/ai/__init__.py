@@ -57,6 +57,17 @@ from analytics.ai.pipeline import (
     PipelineParsingError as PipelineParsingError,
     PipelineValidationError as PipelineValidationError,
 )
+from analytics.ai.fallback import (
+    map_insight_to_recommendation as map_insight_to_recommendation,
+    convert_insights_to_recommendations as convert_insights_to_recommendations,
+    generate_fallback_recommendations as generate_fallback_recommendations,
+)
+from analytics.ai.service import (
+    RecommendationService as RecommendationService,
+    get_recommendation_service as get_recommendation_service,
+    get_recommendations as get_recommendations,
+    get_recommendation_list as get_recommendation_list,
+)
 
 __all__ = [
     "GroqClient",
@@ -105,4 +116,11 @@ __all__ = [
     "PipelineProviderError",
     "PipelineParsingError",
     "PipelineValidationError",
+    "map_insight_to_recommendation",
+    "convert_insights_to_recommendations",
+    "generate_fallback_recommendations",
+    "RecommendationService",
+    "get_recommendation_service",
+    "get_recommendations",
+    "get_recommendation_list",
 ]
