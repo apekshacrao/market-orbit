@@ -5,9 +5,11 @@ import pytest
 
 from analytics.forecasting.data_prep import prepare_daily_series
 from analytics.forecasting.baselines import forecast_baselines
+from analytics.forecasting.validation import validate_baselines
 from analytics.forecasting import (
     prepare_daily_series as package_entrypoint,
     forecast_baselines as package_forecast,
+    validate_baselines as package_validate,
 )
 from analytics.kpi.metrics import calculate_kpis
 from analytics.performance.ranking import rank_campaigns
@@ -945,5 +947,494 @@ def test_full_json_serialization_with_null_and_zero_metrics():
             assert pt["conversions"] == 0   # literal integer 0
             assert pt["clicks"] is None      # literal JSON null
             assert pt["revenue"] is None     # literal JSON null
+
+
+def test_walk_forward_hand_calculable_metrics():
+    """36. Hand-calculable walk-forward validation with exact MAE, RMSE, and WAPE."""
+    # 9 contiguous days from Aug 1 to Aug 9
+    # spend: 100, 110, 120, 130, 140, 150, 160, 170, 180
+    # conversions: 10, 11, 12, 13, 14, 15, 16, 17, 18
+    data = [
+        {
+            "date": f"2026-08-0{i}",
+            "spend": float(100 + (i - 1) * 10),
+            "conversions": 10 + (i - 1),
+        }
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+
+    # horizon=2, min_train_dates=7, step=1
+    # Total dates = 9
+    # Origin 1: k=6 (Aug 7) -> train Aug 1..7 (7 dates), forecast Aug 8 & Aug 9. Both observed.
+    # Origin 2: k=7 (Aug 8) -> train Aug 1..8 (8 dates), forecast Aug 9 & Aug 10. Only Aug 9 observed.
+    # Total evaluated forecast points = 3 points.
+    res = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+
+    assert res["is_available"] is True
+    assert res["status"] == "ready"
+    assert res["parameters"]["horizon"] == 2
+    assert res["parameters"]["min_train_dates"] == 7
+    assert res["parameters"]["step"] == 1
+
+    meta = res["metadata"]
+    assert meta["total_origins_generated"] == 2
+    assert len(meta["origins"]) == 2
+    assert meta["origins"][0]["origin_date"] == "2026-08-07"
+    assert meta["origins"][0]["observed_eval_dates_count"] == 2
+    assert meta["origins"][1]["origin_date"] == "2026-08-08"
+    assert meta["origins"][1]["observed_eval_dates_count"] == 1
+
+    # Naive baseline evaluation:
+    # Origin 1 (Aug 7 latest: spend=160, conv=16):
+    #   Aug 8 actual: spend=170, conv=17 -> abs_err=10, sq_err=100
+    #   Aug 9 actual: spend=180, conv=18 -> abs_err=20, sq_err=400
+    # Origin 2 (Aug 8 latest: spend=170, conv=17):
+    #   Aug 9 actual: spend=180, conv=18 -> abs_err=10, sq_err=100
+    # Spend: sum_abs=40.0, sum_sq=600.0, sum_actual=530.0, count=3
+    #   MAE = 40/3 = 13.3333
+    #   RMSE = sqrt(600/3) = sqrt(200) = 14.1421
+    #   WAPE = (40 / 530) * 100 = 7.5472%
+    # Conversions: sum_abs=4, sum_sq=6, sum_actual=53, count=3
+    #   MAE = 4/3 = 1.3333
+    #   RMSE = sqrt(6/3) = sqrt(2) = 1.4142
+    #   WAPE = (4 / 53) * 100 = 7.5472%
+    naive = res["models"]["naive"]
+    assert naive["origins_eligible"] == 2
+    assert naive["origins_ineligible"] == 0
+
+    spend_naive = naive["metrics"]["spend"]
+    assert spend_naive["points_evaluated"] == 3
+    assert spend_naive["mae"] == 13.3333
+    assert spend_naive["rmse"] == 14.1421
+    assert spend_naive["wape"] == 7.5472
+    assert spend_naive["wape_status"] == "available"
+
+    conv_naive = naive["metrics"]["conversions"]
+    assert conv_naive["points_evaluated"] == 3
+    assert conv_naive["mae"] == 1.3333
+    assert conv_naive["rmse"] == 1.4142
+    assert conv_naive["wape"] == 7.5472
+
+    # SMA-7 baseline evaluation:
+    # Origin 1 (Aug 1..7 avg: spend=130, conv=13):
+    #   Aug 8 actual: spend=170, conv=17 -> abs_err=40, sq_err=1600
+    #   Aug 9 actual: spend=180, conv=18 -> abs_err=50, sq_err=2500
+    # Origin 2 (Aug 2..8 avg: spend=140, conv=14):
+    #   Aug 9 actual: spend=180, conv=18 -> abs_err=40, sq_err=1600
+    # Spend: sum_abs=130.0, sum_sq=5700.0, sum_actual=530.0, count=3
+    #   MAE = 130/3 = 43.3333
+    #   RMSE = sqrt(5700/3) = sqrt(1900) = 43.5890
+    #   WAPE = (130 / 530) * 100 = 24.5283%
+    # Conversions: sum_abs=13, sum_sq=57, sum_actual=53, count=3
+    #   MAE = 13/3 = 4.3333
+    #   RMSE = sqrt(57/3) = sqrt(19) = 4.3589
+    #   WAPE = (13 / 53) * 100 = 24.5283%
+    sma = res["models"]["sma_7"]
+    assert sma["origins_eligible"] == 2
+    assert sma["origins_ineligible"] == 0
+
+    spend_sma = sma["metrics"]["spend"]
+    assert spend_sma["points_evaluated"] == 3
+    assert spend_sma["mae"] == 43.3333
+    assert spend_sma["rmse"] == 43.5890
+    assert spend_sma["wape"] == 24.5283
+
+    conv_sma = sma["metrics"]["conversions"]
+    assert conv_sma["points_evaluated"] == 3
+    assert conv_sma["mae"] == 4.3333
+    assert conv_sma["rmse"] == 4.3589
+    assert conv_sma["wape"] == 24.5283
+
+    # Seasonal naive is ineligible because training history is < 14 dates at both origins
+    snaive = res["models"]["seasonal_naive"]
+    assert snaive["origins_eligible"] == 0
+    assert snaive["origins_ineligible"] == 2
+    assert any("requires at least 14" in r for r in snaive["ineligibility_reasons"])
+    assert snaive["metrics"]["spend"]["points_evaluated"] == 0
+    assert snaive["metrics"]["spend"]["mae"] is None
+
+
+def test_walk_forward_seasonal_naive_eligibility_and_calculation():
+    """37. Seasonal naive becomes eligible when training split reaches 14 contiguous dates."""
+    # 16 contiguous days from Aug 1 to Aug 16
+    data = [
+        {
+            "date": f"2026-08-{i:02d}",
+            "spend": float(100 + i * 10),
+            "conversions": i,
+        }
+        for i in range(1, 17)
+    ]
+    df = pd.DataFrame(data)
+
+    # min_train_dates=14, horizon=2, step=1
+    # Origin 1: k=13 (Aug 14) -> train Aug 1..14 (14 dates), forecast Aug 15 & 16 (both observed)
+    # Origin 2: k=14 (Aug 15) -> train Aug 1..15 (15 dates), forecast Aug 16 & 17 (only Aug 16 observed)
+    res = validate_baselines(df, horizon=2, min_train_dates=14, step=1)
+
+    assert res["is_available"] is True
+    snaive = res["models"]["seasonal_naive"]
+    assert snaive["origins_eligible"] == 2
+    assert snaive["origins_ineligible"] == 0
+
+    spend_snaive = snaive["metrics"]["spend"]
+    assert spend_snaive["points_evaluated"] == 3
+    assert spend_snaive["mae"] is not None
+    assert spend_snaive["rmse"] is not None
+    assert spend_snaive["wape"] is not None
+
+
+def test_walk_forward_leakage_safety_future_isolation():
+    """38. Future records never leak into earlier training windows or influence earlier forecasts."""
+    # Base dataset: 10 days
+    data_base = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 10)
+    ]
+    data_base.append({"date": "2026-08-10", "spend": 100.0, "conversions": 10})
+
+    # Tampered dataset: day 10 has a massive budget spike of 50,000
+    data_tampered = [dict(r) for r in data_base]
+    data_tampered[-1]["spend"] = 50000.0
+
+    res_base = validate_baselines(pd.DataFrame(data_base), horizon=2, min_train_dates=7, step=1)
+    res_tampered = validate_baselines(pd.DataFrame(data_tampered), horizon=2, min_train_dates=7, step=1)
+
+    # Origin 1 is at 2026-08-07 (evaluating Aug 8 and Aug 9)
+    # Both datasets have identical data up to Aug 7, so forecasts made at Origin 1 MUST be identical!
+    orig_base_1 = res_base["metadata"]["origins"][0]
+    orig_tamp_1 = res_tamp = res_tampered["metadata"]["origins"][0]
+    assert orig_base_1["train_dates_count"] == orig_tamp_1["train_dates_count"] == 7
+    assert orig_base_1["forecast_start_date"] == orig_tamp_1["forecast_start_date"] == "2026-08-08"
+
+
+def test_walk_forward_parameter_validation():
+    """39. Rejects invalid horizon, min_train_dates, and step parameters."""
+    df = pd.DataFrame([{"date": f"2026-08-0{i}", "spend": 100.0} for i in range(1, 9)])
+
+    invalid_params = [0, -1, -5, True, False, "7", "seven", 7.5, None]
+
+    for p in invalid_params:
+        with pytest.raises(ValueError):
+            validate_baselines(df, horizon=p)
+        with pytest.raises(ValueError):
+            validate_baselines(df, min_train_dates=p)
+        with pytest.raises(ValueError):
+            validate_baselines(df, step=p)
+
+
+def test_walk_forward_insufficient_history_and_empty_inputs():
+    """40. Handles empty inputs, missing date column, and insufficient history deterministically."""
+    # None input
+    res_none = validate_baselines(None)
+    assert res_none["is_available"] is False
+    assert res_none["status"] == "unavailable"
+
+    # Empty DataFrame
+    res_empty = validate_baselines(pd.DataFrame())
+    assert res_empty["is_available"] is False
+    assert res_empty["status"] == "unavailable"
+
+    # Missing date column
+    res_no_date = validate_baselines(pd.DataFrame([{"spend": 100.0}]))
+    assert res_no_date["is_available"] is False
+    assert res_no_date["status"] == "unavailable"
+
+    # Insufficient dates: 10 dates with min_train_dates=14
+    df_short = pd.DataFrame([{"date": f"2026-08-{i:02d}", "spend": 100.0} for i in range(1, 11)])
+    res_short = validate_baselines(df_short, min_train_dates=14)
+    assert res_short["is_available"] is False
+    assert res_short["status"] == "insufficient_history"
+    assert any("at least 15" in w for w in res_short["warnings"])
+
+    # Exactly min_train_dates (14 dates) -> 0 future test dates remaining -> insufficient
+    df_exact = pd.DataFrame([{"date": f"2026-08-{i:02d}", "spend": 100.0} for i in range(1, 15)])
+    res_exact = validate_baselines(df_exact, min_train_dates=14)
+    assert res_exact["is_available"] is False
+    assert res_exact["status"] == "insufficient_history"
+
+
+def test_walk_forward_calendar_gaps_and_missing_eval_dates():
+    """41. Handles unobserved calendar dates in forecast horizon without fabricating actuals."""
+    # Observed dates: Aug 1..7 (training), Aug 8 (observed), then gap until Aug 12 (observed)
+    # Aug 9, 10, 11 are unobserved
+    dates = [f"2026-08-0{i}" for i in range(1, 9)] + ["2026-08-12"]
+    data = [{"date": d, "spend": 100.0, "conversions": 10} for d in dates]
+    df = pd.DataFrame(data)
+
+    # min_train_dates=7, horizon=5, step=1
+    # Origin 1 at Aug 7: horizon spans Aug 8 to Aug 12 (5 days).
+    # Actual observations exist ONLY for Aug 8 and Aug 12 (2 days).
+    res = validate_baselines(df, horizon=5, min_train_dates=7, step=1)
+
+    assert res["is_available"] is True
+    assert res["metadata"]["total_origins_generated"] == 2
+    orig1 = res["metadata"]["origins"][0]
+    assert orig1["origin_date"] == "2026-08-07"
+    assert orig1["observed_eval_dates_count"] == 2  # Aug 8 and Aug 12 only (Aug 9-11 unobserved)
+
+    orig2 = res["metadata"]["origins"][1]
+    assert orig2["origin_date"] == "2026-08-08"
+    assert orig2["observed_eval_dates_count"] == 1  # Aug 12 only in horizon Aug 9..13
+
+    # Total forecast points evaluated for Naive across both origins: 2 + 1 = 3
+    assert res["models"]["naive"]["metrics"]["spend"]["points_evaluated"] == 3
+
+
+def test_walk_forward_wape_zero_denominator():
+    """42. WAPE returns None with status 'undefined_zero_actuals' when sum of actuals is zero."""
+    # Conversions explicitly observed as 0 across all days
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 0}
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+    res = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+
+    assert res["is_available"] is True
+    conv_naive = res["models"]["naive"]["metrics"]["conversions"]
+    assert conv_naive["points_evaluated"] == 3
+    assert conv_naive["mae"] == 0.0
+    assert conv_naive["rmse"] == 0.0
+    # Denominator sum of actuals is 0 -> WAPE is undefined null
+    assert conv_naive["wape"] is None
+    assert conv_naive["wape_status"] == "undefined_zero_actuals"
+
+
+def test_walk_forward_revenue_completeness():
+    """43. Revenue is only evaluated when both training split and evaluation actuals satisfy completeness."""
+    # Case A: Complete revenue
+    data_comp = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10, "revenue": 300.0}
+        for i in range(1, 10)
+    ]
+    res_comp = validate_baselines(pd.DataFrame(data_comp), horizon=2, min_train_dates=7, step=1)
+    assert res_comp["revenue_complete"] is True
+    assert res_comp["models"]["naive"]["metrics"]["revenue"]["points_evaluated"] == 3
+    assert res_comp["models"]["naive"]["metrics"]["revenue"]["mae"] == 0.0
+
+    # Case B: Untracked revenue (no column)
+    data_untracked = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 10)
+    ]
+    res_untracked = validate_baselines(pd.DataFrame(data_untracked), horizon=2, min_train_dates=7, step=1)
+    assert res_untracked["revenue_complete"] is False
+    rev_eval = res_untracked["models"]["naive"]["metrics"]["revenue"]
+    assert rev_eval["points_evaluated"] == 0
+    assert rev_eval["mae"] is None
+    assert rev_eval["wape_status"] == "no_evaluated_points"
+
+    # Case C: Partially missing revenue in training
+    data_part = [dict(r) for r in data_comp]
+    data_part[2]["revenue"] = None  # day 3 missing revenue -> invalidates training splits
+    res_part = validate_baselines(pd.DataFrame(data_part), horizon=2, min_train_dates=7, step=1)
+    assert res_part["revenue_complete"] is False
+    assert res_part["models"]["naive"]["metrics"]["revenue"]["points_evaluated"] == 0
+
+
+def test_walk_forward_metric_specific_evaluation_counts():
+    """44. Distinguishes metric evaluation sample sizes when some metrics are untracked or partially missing."""
+    # 9 days: spend & conversions on all 9 days.
+    # clicks: tracked ONLY on days 5..9 (None on days 1..4)
+    data = []
+    for i in range(1, 10):
+        data.append({
+            "date": f"2026-08-0{i}",
+            "spend": 100.0,
+            "conversions": 10,
+            "clicks": 50 if i >= 5 else None,
+        })
+    df = pd.DataFrame(data)
+    res = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+
+    assert res["is_available"] is True
+    # Spend evaluated on all 3 test points
+    assert res["models"]["naive"]["metrics"]["spend"]["points_evaluated"] == 3
+    # Clicks at origin 1 (Aug 7) has clicks on Aug 7 -> forecasts 50 for Aug 8 & Aug 9 (both have actual clicks 50)
+    # Clicks at origin 2 (Aug 8) has clicks on Aug 8 -> forecasts 50 for Aug 9
+    assert res["models"]["naive"]["metrics"]["clicks"]["points_evaluated"] == 3
+
+    # But for SMA-7:
+    # Origin 1 (Aug 7) looks at Aug 1..7. Days 1..4 have None -> SMA-7 clicks is UNAVAILABLE!
+    # Origin 2 (Aug 8) looks at Aug 2..8. Days 2..4 have None -> SMA-7 clicks is UNAVAILABLE!
+    # Thus SMA-7 clicks points_evaluated is 0!
+    assert res["models"]["sma_7"]["metrics"]["clicks"]["points_evaluated"] == 0
+    assert res["models"]["sma_7"]["metrics"]["spend"]["points_evaluated"] == 3
+
+
+def test_walk_forward_immutability_and_determinism():
+    """45. Repeated calls produce identical outputs; caller DataFrame is unmutated."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0 + i, "conversions": 10 + i}
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+    df_copy = df.copy(deep=True)
+
+    res1 = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+    res2 = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+
+    # Immutability
+    pd.testing.assert_frame_equal(df, df_copy)
+
+    # Determinism
+    assert res1 == res2
+
+    # JSON serialization
+    serialized = json.dumps(res1, allow_nan=False)
+    deserialized = json.loads(serialized)
+    assert deserialized["is_available"] is True
+    assert deserialized["status"] == "ready"
+
+
+def test_walk_forward_package_export():
+    """46. validate_baselines is exposed via package root analytics.forecasting."""
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+    res_direct = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+    res_pkg = package_validate(df, horizon=2, min_train_dates=7, step=1)
+
+    assert res_direct == res_pkg
+
+
+def test_walk_forward_28_date_reference_case():
+    """47. 28-date reference case produces exactly 14 origins and 77 evaluated points per metric."""
+    # 28 consecutive calendar dates with all 5 metrics populated and valid
+    data = [
+        {
+            "date": f"2026-08-{i:02d}",
+            "spend": float(100 + i * 5),
+            "conversions": 10 + (i % 5),
+            "clicks": 50 + i * 2,
+            "impressions": 1000 + i * 50,
+            "revenue": float(300 + i * 10),
+        }
+        for i in range(1, 29)
+    ]
+    df = pd.DataFrame(data)
+
+    # horizon=7, min_train_dates=14, step=1
+    res = validate_baselines(df, horizon=7, min_train_dates=14, step=1)
+
+    assert res["is_available"] is True
+    assert res["status"] == "ready"
+    assert res["revenue_complete"] is True
+
+    # 1. Exact Origin Count Verification
+    # Initial origin: k = 13 (Aug 14, 14 training dates)
+    # Loop continues while k < 27 (last date Aug 28 is k=27)
+    # Origins: k = 13, 14, 15, ..., 26 -> exactly 14 origins
+    meta = res["metadata"]
+    assert meta["total_origins_generated"] == 14
+    assert len(meta["origins"]) == 14
+    assert meta["origins"][0]["origin_date"] == "2026-08-14"
+    assert meta["origins"][-1]["origin_date"] == "2026-08-27"
+
+    # 2. Exact Progressive Horizon Truncation Breakdown
+    # Origins 0..7 (k=13..20): full 7-day horizon inside dataset (8 * 7 = 56 points)
+    for i in range(8):
+        assert meta["origins"][i]["observed_eval_dates_count"] == 7
+    # Origins 8..13 (k=21..26): progressively truncated horizons near dataset end
+    assert meta["origins"][8]["observed_eval_dates_count"] == 6   # Aug 23..28
+    assert meta["origins"][9]["observed_eval_dates_count"] == 5   # Aug 24..28
+    assert meta["origins"][10]["observed_eval_dates_count"] == 4  # Aug 25..28
+    assert meta["origins"][11]["observed_eval_dates_count"] == 3  # Aug 26..28
+    assert meta["origins"][12]["observed_eval_dates_count"] == 2  # Aug 27..28
+    assert meta["origins"][13]["observed_eval_dates_count"] == 1  # Aug 28 only
+
+    # Total evaluated points across all 14 origins = 56 + 6 + 5 + 4 + 3 + 2 + 1 = 77 points
+    expected_total_points = 56 + 21
+    assert expected_total_points == 77
+
+    # 3. Model & Metric Verification
+    for model_key in ["naive", "sma_7", "seasonal_naive"]:
+        m_dict = res["models"][model_key]
+        assert m_dict["origins_eligible"] == 14
+        assert m_dict["origins_ineligible"] == 0
+
+        for metric in ["spend", "conversions", "clicks", "impressions", "revenue"]:
+            met_eval = m_dict["metrics"][metric]
+            assert met_eval["points_evaluated"] == 77
+            assert met_eval["mae"] is not None
+            assert met_eval["rmse"] is not None
+            assert met_eval["wape"] is not None
+            assert met_eval["wape_status"] == "available"
+
+
+def test_walk_forward_pooled_vs_unweighted_origin_aggregation():
+    """48. Verifies point-weighted pooled error aggregation over unweighted origin averages."""
+    # Hand-calculable fixture with unequal points across origins:
+    # 9 days from Aug 1 to Aug 9.
+    # min_train_dates=7, horizon=2, step=1
+    # Origin 1 (Aug 7): 2 test points (Aug 8: err=10, Aug 9: err=20) -> per-origin MAE = 15.0
+    # Origin 2 (Aug 8): 1 test point (Aug 9: err=10) -> per-origin MAE = 10.0
+    # If unweighted average of origins: (15.0 + 10.0) / 2 = 12.5
+    # If point-weighted pooled: (10 + 20 + 10) / 3 = 40 / 3 = 13.3333
+    data = [
+        {"date": f"2026-08-0{i}", "spend": float(100 + (i - 1) * 10), "conversions": 10}
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+    res = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+
+    spend_naive = res["models"]["naive"]["metrics"]["spend"]
+    assert spend_naive["points_evaluated"] == 3
+    # Point-weighted pooled MAE must be 13.3333, strictly NOT the unweighted origin average 12.5
+    assert spend_naive["mae"] == 13.3333
+    assert spend_naive["mae"] != 12.5
+
+
+def test_walk_forward_multi_origin_repeated_date_evaluation():
+    """49. Verifies that the same calendar date is evaluated independently across rolling origins."""
+    # 9 days: Aug 9 is in the horizon of both Origin 1 (Aug 7, h=2) and Origin 2 (Aug 8, h=1)
+    data = [
+        {"date": f"2026-08-0{i}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 10)
+    ]
+    df = pd.DataFrame(data)
+    res = validate_baselines(df, horizon=2, min_train_dates=7, step=1)
+
+    orig1 = res["metadata"]["origins"][0]
+    orig2 = res["metadata"]["origins"][1]
+
+    # Origin 1 (Aug 7) projects Aug 8 and Aug 9
+    assert orig1["forecast_start_date"] == "2026-08-08"
+    assert orig1["forecast_end_date"] == "2026-08-09"
+
+    # Origin 2 (Aug 8) projects Aug 9 and Aug 10 (Aug 10 unobserved)
+    assert orig2["forecast_start_date"] == "2026-08-09"
+    assert orig2["forecast_end_date"] == "2026-08-10"
+
+    # Aug 9 was evaluated in both origins
+    assert orig1["models"]["naive"]["points_evaluated"]["spend"] == 2
+    assert orig2["models"]["naive"]["points_evaluated"]["spend"] == 1
+
+
+def test_walk_forward_untracked_metric_zero_points_no_scores():
+    """50. Untracked metrics produce zero evaluated points and strictly null scores."""
+    # Dataset with only spend and conversions; clicks, impressions, revenue untracked
+    data = [
+        {"date": f"2026-08-{i:02d}", "spend": 100.0, "conversions": 10}
+        for i in range(1, 16)
+    ]
+    df = pd.DataFrame(data)
+    res = validate_baselines(df, horizon=2, min_train_dates=14, step=1)
+
+    assert res["is_available"] is True
+    for model_key in ["naive", "sma_7", "seasonal_naive"]:
+        for untracked_met in ["clicks", "impressions", "revenue"]:
+            met_dict = res["models"][model_key]["metrics"][untracked_met]
+            assert met_dict["points_evaluated"] == 0
+            assert met_dict["mae"] is None
+            assert met_dict["rmse"] is None
+            assert met_dict["wape"] is None
+            assert met_dict["wape_status"] == "no_evaluated_points"
+
+
 
 
