@@ -120,24 +120,34 @@ def load_groq_config() -> Dict[str, Any]:
         except Exception:
             pass
 
-    # Try reading .env / backend/.env directly if api_key still empty
+    # Try reading .env at project root first, then backend/.env
     if not config["api_key"]:
         try:
             from dotenv import dotenv_values
             root_dir = Path(__file__).resolve().parents[2]
-            for env_path in [root_dir / "backend" / ".env", root_dir / ".env"]:
+            candidate_paths = [
+                root_dir / ".env",
+                root_dir / "backend" / ".env",
+            ]
+            for env_path in candidate_paths:
                 if env_path.is_file():
                     vals = dotenv_values(env_path)
-                    if vals.get("GROQ_API_KEY"):
+                    if not config["api_key"] and vals.get("GROQ_API_KEY"):
                         config["api_key"] = str(vals["GROQ_API_KEY"]).strip()
-                    if not config["model"] and vals.get("GROQ_MODEL"):
+                    if (not config["model"] or config["model"] == DEFAULT_GROQ_MODEL) and vals.get("GROQ_MODEL"):
                         config["model"] = str(vals["GROQ_MODEL"]).strip()
                     if config["timeout"] is None and vals.get("GROQ_TIMEOUT"):
                         try:
                             config["timeout"] = float(vals["GROQ_TIMEOUT"])
                         except ValueError:
                             pass
-                    break
+                    if config["max_retries"] is None and vals.get("GROQ_MAX_RETRIES"):
+                        try:
+                            config["max_retries"] = int(vals["GROQ_MAX_RETRIES"])
+                        except ValueError:
+                            pass
+                    if config["api_key"]:
+                        break
         except Exception:
             pass
 
@@ -173,7 +183,7 @@ class GroqClient:
     ):
         resolved = load_groq_config()
 
-        self._api_key: str = (api_key.strip() if api_key else "") or resolved["api_key"]
+        self._api_key: str = api_key.strip() if api_key is not None else resolved["api_key"]
         self.model: str = (model.strip() if model else "") or resolved["model"]
         self.timeout: float = float(timeout) if timeout is not None else resolved["timeout"]
         self.max_retries: int = int(max_retries) if max_retries is not None else resolved["max_retries"]

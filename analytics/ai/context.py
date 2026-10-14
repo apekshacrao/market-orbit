@@ -84,6 +84,7 @@ def build_analytics_context(
     max_insights: int = DEFAULT_MAX_INSIGHTS,
     max_dimension_categories: int = DEFAULT_MAX_DIMENSION_CATEGORIES,
     max_timeline_points: int = DEFAULT_MAX_TIMELINE_POINTS,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """
     Builds a deterministic, evidence-grounded analytics context payload.
@@ -95,6 +96,17 @@ def build_analytics_context(
     Returns:
         A strictly JSON-serializable dictionary with structured, verified facts.
     """
+    # Resolve aliases
+    if kpis is None and "kpi_summary" in kwargs:
+        kpis = kwargs["kpi_summary"]
+    if rankings is None and "campaign_rankings" in kwargs:
+        rankings = kwargs["campaign_rankings"]
+    if trends is None and "time_series_trends" in kwargs:
+        trends = kwargs["time_series_trends"]
+    if trends is None and "dimensional_breakdowns" in kwargs:
+        trends = kwargs["dimensional_breakdowns"]
+    if insights is None and "verified_insights" in kwargs:
+        insights = kwargs["verified_insights"]
     # Derive missing components if DataFrame is provided
     if df is not None and not df.empty:
         if kpis is None:

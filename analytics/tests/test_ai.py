@@ -59,6 +59,17 @@ from analytics.ai.parser import (
     parse_recommendations,
     parse_recommendation_list,
 )
+from analytics.ai.pipeline import (
+    RecommendationPipeline,
+    run_recommendation_pipeline,
+    generate_live_recommendations,
+    RecommendationPipelineError,
+    PipelineConfigurationError,
+    PipelineAuthenticationError,
+    PipelineProviderError,
+    PipelineParsingError,
+    PipelineValidationError,
+)
 import analytics.ai as ai_package
 
 
@@ -1684,4 +1695,297 @@ def test_package_exports_for_phase_5_4():
     assert hasattr(ai_package, "parse_recommendations")
     assert hasattr(ai_package, "parse_recommendation_list")
     assert ai_package.RecommendationListResponse is RecommendationBatch
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.5: Live Groq Inference Pipeline & Root-level .env Tests
+# ---------------------------------------------------------------------------
+
+def test_load_groq_config_root_env_discovery(tmp_path, monkeypatch):
+    """Verify load_groq_config discovers and prioritizes GROQ_API_KEY from project root .env."""
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_TIMEOUT", raising=False)
+    monkeypatch.delenv("GROQ_MAX_RETRIES", raising=False)
+
+    # Clear cached settings in backend config if already imported
+    if "app.core.config" in sys.modules:
+        monkeypatch.setattr(sys.modules["app.core.config"].settings, "GROQ_API_KEY", "")
+
+    # Create temporary root with .env
+    root_env = tmp_path / ".env"
+    root_env.write_text("GROQ_API_KEY=gsk_mock_root_env_test_token_12345\nGROQ_MODEL=llama-3.3-70b-versatile\n", encoding="utf-8")
+
+    # Mock Path resolution in groq_client to point to tmp_path
+    monkeypatch.setattr("analytics.ai.groq_client.Path.resolve", lambda self: tmp_path / "analytics" / "ai" / "groq_client.py")
+
+    config = load_groq_config()
+    assert config["api_key"] == "gsk_mock_root_env_test_token_12345"
+    assert config["model"] == "llama-3.3-70b-versatile"
+
+
+def test_pipeline_missing_api_key_raises_configuration_error(monkeypatch):
+    """Verify pipeline raises PipelineConfigurationError without making network requests when unconfigured."""
+    client = GroqClient(api_key="")
+    pipeline = RecommendationPipeline(client=client)
+
+    with pytest.raises(PipelineConfigurationError, match="GROQ_API_KEY is not configured"):
+        pipeline.run(kpi_summary={"total_spend": 100.0})
+
+
+def test_pipeline_end_to_end_success_mocked():
+    """Verify end-to-end pipeline execution with mocked Groq completion."""
+    client = GroqClient(api_key="mock_test_key_phase_5_5")
+    mock_llm_response = json.dumps([
+        {
+            "id": "rec-501",
+            "category": "budget_allocation",
+            "title": "Scale Top ROAS Campaign",
+            "action": "Increase Search campaign budget by 20%",
+            "rationale": "Demonstrated 4.2x ROAS across evaluation period.",
+            "supporting_evidence": {"metric": "roas", "observed_value": 4.2},
+            "source": "groq_llm",
+        },
+        {
+            "id": "rec-502",
+            "category": "waste_reduction",
+            "title": "Mitigate High CPA Waste",
+            "action": "Pause low-performing display ad group",
+            "rationale": "Display campaign CPA is 3x higher than account target.",
+            "supporting_evidence": {"metric": "cpa", "observed_value": 72.0},
+            "source": "groq_llm",
+        },
+    ])
+
+    client.chat_completion = MagicMock(return_value=mock_llm_response)
+
+    batch = run_recommendation_pipeline(
+        kpi_summary={"total_spend": 2500.0, "total_revenue": 7500.0, "roas": 3.0, "revenue_tracked": True},
+        campaign_rankings={"top": [{"campaign_name": "Camp1", "spend": 1000.0, "revenue": 4200.0, "roas": 4.2}]},
+        client=client,
+        dataset_id="test-dataset-55",
+    )
+
+    assert isinstance(batch, RecommendationBatch)
+    assert len(batch.recommendations) == 2
+    assert batch.dataset_id == "test-dataset-55"
+
+    rec1 = batch.recommendations[0]
+    assert rec1.id == "rec-501"
+    assert rec1.category == RecommendationCategory.BUDGET_ALLOCATION
+    assert rec1.source == RecommendationSource.GROQ_LLM
+    assert rec1.supporting_evidence.observed_value == 4.2
+
+    # Verify message formatting sent to chat_completion
+    client.chat_completion.assert_called_once()
+    call_args = client.chat_completion.call_args[1]
+    messages = call_args["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    assert "<verified_analytics_context>" in messages[1]["content"]
+    assert "2500.0" in messages[1]["content"]
+
+
+def test_pipeline_generate_live_recommendations_serialization():
+    """Verify generate_live_recommendations returns list of dictionaries ready for backend persistence."""
+    client = GroqClient(api_key="mock_test_key_phase_5_5")
+    mock_llm_response = json.dumps([
+        {
+            "id": "rec-backend-1",
+            "category": "channel_scaling",
+            "title": "Scale Channel Mix",
+            "action": "Invest in video ads",
+            "rationale": "High view-through conversions.",
+            "source": "groq_llm",
+        }
+    ])
+    client.chat_completion = MagicMock(return_value=mock_llm_response)
+
+    result_list = generate_live_recommendations(
+        kpi_summary={"total_spend": 100.0},
+        client=client,
+    )
+
+    assert isinstance(result_list, list)
+    assert len(result_list) == 1
+    item = result_list[0]
+    assert isinstance(item, dict)
+    assert item["id"] == "rec-backend-1"
+    assert item["title"] == "Scale Channel Mix"
+    assert item["description"] == "High view-through conversions."
+    assert item["source"] == "groq_llm"
+
+
+def test_pipeline_empty_valid_recommendation_list():
+    """Verify pipeline handles empty recommendation lists cleanly without error."""
+    client = GroqClient(api_key="mock_test_key_phase_5_5")
+    client.chat_completion = MagicMock(return_value="[]")
+
+    batch = run_recommendation_pipeline(
+        kpi_summary={"total_spend": 50.0},
+        client=client,
+    )
+    assert len(batch.recommendations) == 0
+
+
+def test_pipeline_authentication_error_no_retry():
+    """Verify authentication errors fail immediately without triggering parse retries."""
+    client = GroqClient(api_key="invalid_or_expired_key")
+    client.chat_completion = MagicMock(side_effect=GroqAuthenticationError("Invalid API Key (401)"))
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=1)
+
+    with pytest.raises(PipelineAuthenticationError, match="Invalid API Key"):
+        pipeline.run(kpi_summary={"total_spend": 100.0})
+
+    # Ensure no retry occurred for authentication failure
+    assert client.chat_completion.call_count == 1
+
+
+def test_pipeline_provider_rate_limit_and_timeout():
+    """Verify provider rate limit and timeout errors raise PipelineProviderError without parse retries."""
+    client = GroqClient(api_key="mock_key")
+    client.chat_completion = MagicMock(side_effect=GroqRateLimitError("Rate limit reached: 429"))
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=1)
+
+    with pytest.raises(PipelineProviderError, match="Rate limit"):
+        pipeline.run(kpi_summary={"total_spend": 100.0})
+
+    assert client.chat_completion.call_count == 1
+
+
+def test_pipeline_bounded_parse_retry_success():
+    """Verify pipeline retries at most once upon initial malformed JSON and succeeds on second attempt."""
+    client = GroqClient(api_key="mock_key")
+    malformed_json = '{"recommendations": [{"id": "rec-incomplete", "title":'
+    valid_json = json.dumps([
+        {
+            "id": "rec-retry-ok",
+            "category": "budget_allocation",
+            "title": "Retry Succeeded",
+            "action": "Proceed with allocation",
+            "rationale": "Clear rationale on retry.",
+            "source": "groq_llm",
+        }
+    ])
+
+    client.chat_completion = MagicMock(side_effect=[malformed_json, valid_json])
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=1)
+    batch = pipeline.run(kpi_summary={"total_spend": 200.0})
+
+    assert len(batch.recommendations) == 1
+    assert batch.recommendations[0].id == "rec-retry-ok"
+    assert client.chat_completion.call_count == 2
+
+
+def test_pipeline_bounded_parse_retry_exhausted():
+    """Verify pipeline raises PipelineParsingError when all parse attempts fail."""
+    client = GroqClient(api_key="mock_key")
+    malformed_json = '{"recommendations": [{"id": "broken"}'
+
+    client.chat_completion = MagicMock(return_value=malformed_json)
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=1)
+
+    with pytest.raises(PipelineParsingError, match="Failed to parse LLM response as JSON"):
+        pipeline.run(kpi_summary={"total_spend": 200.0})
+
+    assert client.chat_completion.call_count == 2  # 1 initial + 1 retry
+
+
+def test_pipeline_validation_error_on_invalid_schema():
+    """Verify pipeline raises PipelineValidationError when model returns invalid schema or enums."""
+    client = GroqClient(api_key="mock_key")
+    invalid_schema_json = json.dumps([
+        {
+            "id": "rec-bad-cat",
+            "category": "not_a_valid_category_xyz",
+            "title": "Title",
+            "action": "Action",
+            "rationale": "Rationale",
+            "source": "groq_llm",
+        }
+    ])
+
+    client.chat_completion = MagicMock(return_value=invalid_schema_json)
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=1)
+
+    with pytest.raises(PipelineValidationError, match="violated recommendation schema"):
+        pipeline.run(kpi_summary={"total_spend": 200.0})
+
+
+def test_pipeline_source_attribution_enforcement():
+    """Verify pipeline rejects responses attempting to claim non-groq_llm source."""
+    client = GroqClient(api_key="mock_key")
+    spoofed_source_json = json.dumps([
+        {
+            "id": "rec-spoof",
+            "category": "budget_allocation",
+            "title": "Title",
+            "action": "Action",
+            "rationale": "Rationale",
+            "source": "deterministic_fallback",
+        }
+    ])
+
+    client.chat_completion = MagicMock(return_value=spoofed_source_json)
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=0)
+
+    with pytest.raises(PipelineValidationError, match="Source attribution mismatch"):
+        pipeline.run(kpi_summary={"total_spend": 200.0})
+
+
+def test_pipeline_no_secret_leakage_in_exceptions():
+    """Verify pipeline exceptions never echo the raw API key."""
+    secret_key = "gsk_super_secret_test_token_99999"
+    client = GroqClient(api_key=secret_key)
+    client.chat_completion = MagicMock(side_effect=GroqAPIError(f"Provider rejected request for key {secret_key}"))
+
+    pipeline = RecommendationPipeline(client=client, max_parse_retries=0)
+
+    with pytest.raises(PipelineProviderError) as exc_info:
+        pipeline.run(kpi_summary={"total_spend": 100.0})
+
+    err_text = str(exc_info.value)
+    assert secret_key not in err_text
+
+
+def test_pipeline_never_returns_hardcoded_mocks_as_live():
+    """Verify pipeline executes live inference path and never silently returns static mock recommendations."""
+    client = GroqClient(api_key="mock_key")
+    mock_response = json.dumps([
+        {
+            "id": "rec-dynamic-001",
+            "category": "data_tracking",
+            "title": "Dynamic Title From Inference",
+            "action": "Audit UTM Parameters",
+            "rationale": "Identified dynamic tracking gap in dataset.",
+            "source": "groq_llm",
+        }
+    ])
+    client.chat_completion = MagicMock(return_value=mock_response)
+
+    batch = run_recommendation_pipeline(client=client, kpi_summary={"total_spend": 100.0})
+    assert len(batch.recommendations) == 1
+    assert batch.recommendations[0].title == "Dynamic Title From Inference"
+    assert batch.recommendations[0].title != "Scale High-ROAS Campaigns"
+
+
+def test_package_exports_for_phase_5_5():
+    """Verify all Phase 5.5 pipeline classes and functions are cleanly exported from analytics.ai."""
+    assert hasattr(ai_package, "RecommendationPipeline")
+    assert hasattr(ai_package, "run_recommendation_pipeline")
+    assert hasattr(ai_package, "generate_live_recommendations")
+    assert hasattr(ai_package, "RecommendationPipelineError")
+    assert hasattr(ai_package, "PipelineConfigurationError")
+    assert hasattr(ai_package, "PipelineAuthenticationError")
+    assert hasattr(ai_package, "PipelineProviderError")
+    assert hasattr(ai_package, "PipelineParsingError")
+    assert hasattr(ai_package, "PipelineValidationError")
+
 

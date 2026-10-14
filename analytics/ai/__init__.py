@@ -46,6 +46,17 @@ from analytics.ai.parser import (
     parse_recommendations as parse_recommendations,
     parse_recommendation_list as parse_recommendation_list,
 )
+from analytics.ai.pipeline import (
+    RecommendationPipeline as RecommendationPipeline,
+    run_recommendation_pipeline as run_recommendation_pipeline,
+    generate_live_recommendations as generate_live_recommendations,
+    RecommendationPipelineError as RecommendationPipelineError,
+    PipelineConfigurationError as PipelineConfigurationError,
+    PipelineAuthenticationError as PipelineAuthenticationError,
+    PipelineProviderError as PipelineProviderError,
+    PipelineParsingError as PipelineParsingError,
+    PipelineValidationError as PipelineValidationError,
+)
 
 __all__ = [
     "GroqClient",
@@ -85,4 +96,13 @@ __all__ = [
     "extract_json_payload",
     "parse_recommendations",
     "parse_recommendation_list",
+    "RecommendationPipeline",
+    "run_recommendation_pipeline",
+    "generate_live_recommendations",
+    "RecommendationPipelineError",
+    "PipelineConfigurationError",
+    "PipelineAuthenticationError",
+    "PipelineProviderError",
+    "PipelineParsingError",
+    "PipelineValidationError",
 ]
