@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 
 from analytics.performance.ranking import aggregate_campaigns
+from analytics.segmentation.portfolio import profile_segment_portfolio
 
 
 def classify_campaign_cohorts(df: pd.DataFrame) -> Dict[str, Any]:
