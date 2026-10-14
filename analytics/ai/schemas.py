@@ -171,6 +171,15 @@ class RecommendationItem(BaseModel):
             cleaned.append(item.strip())
         return cleaned
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_rationale_from_description(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if not data.get("rationale") and data.get("description"):
+                data = dict(data)
+                data["rationale"] = data["description"]
+        return data
+
     @model_validator(mode="after")
     def sync_description(self) -> "RecommendationItem":
         # Ensure description is populated for backward compatibility with legacy consumers
@@ -221,8 +230,9 @@ class RecommendationBatch(BaseModel):
         return cls(recommendations=normalized, dataset_id=dataset_id)
 
 
-# Alias for compatibility with differing naming preferences
+# Aliases for compatibility with differing naming preferences
 RecommendationResponse = RecommendationBatch
+RecommendationListResponse = RecommendationBatch
 
 
 def _infer_category(title: str, action: str) -> RecommendationCategory:

@@ -35,7 +35,16 @@ from analytics.ai.schemas import (
     RecommendationItem as RecommendationItem,
     RecommendationBatch as RecommendationBatch,
     RecommendationResponse as RecommendationResponse,
+    RecommendationListResponse as RecommendationListResponse,
     normalize_recommendation as normalize_recommendation,
+)
+from analytics.ai.parser import (
+    RecommendationParserError as RecommendationParserError,
+    ResponseParsingError as ResponseParsingError,
+    ResponseValidationError as ResponseValidationError,
+    extract_json_payload as extract_json_payload,
+    parse_recommendations as parse_recommendations,
+    parse_recommendation_list as parse_recommendation_list,
 )
 
 __all__ = [
@@ -68,5 +77,12 @@ __all__ = [
     "RecommendationItem",
     "RecommendationBatch",
     "RecommendationResponse",
+    "RecommendationListResponse",
     "normalize_recommendation",
+    "RecommendationParserError",
+    "ResponseParsingError",
+    "ResponseValidationError",
+    "extract_json_payload",
+    "parse_recommendations",
+    "parse_recommendation_list",
 ]

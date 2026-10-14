@@ -48,7 +48,16 @@ from analytics.ai.schemas import (
     RecommendationItem,
     RecommendationBatch,
     RecommendationResponse,
+    RecommendationListResponse,
     normalize_recommendation,
+)
+from analytics.ai.parser import (
+    RecommendationParserError,
+    ResponseParsingError,
+    ResponseValidationError,
+    extract_json_payload,
+    parse_recommendations,
+    parse_recommendation_list,
 )
 import analytics.ai as ai_package
 
@@ -1208,3 +1217,471 @@ def test_format_legacy_prompt_backward_compatibility():
     assert "Spend: $500" in formatted
     assert "Top: Alpha" in formatted
     assert "Bottom: Beta" in formatted
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.4: Response Parsing, Validation & Contract Tests
+# ---------------------------------------------------------------------------
+
+def test_parse_valid_json_single_recommendation():
+    """Verify parsing a valid single-item JSON array adhering to RecommendationItem."""
+    payload = json.dumps([
+        {
+            "id": "rec-001",
+            "category": "budget_allocation",
+            "title": "Scale Search Campaign",
+            "action": "Increase Google Search budget by 15%",
+            "rationale": "Search campaigns demonstrated consistent 3.8x ROAS over 14 days.",
+            "supporting_evidence": {
+                "metric": "roas",
+                "observed_value": 3.8,
+                "campaign_name": "Search_Brand_Alpha",
+                "dimension": "channel",
+                "dimension_value": "Google Search",
+                "benchmark_value": None,
+            },
+            "limitations": ["Requires ongoing bid monitoring"],
+            "source": "groq_llm",
+        }
+    ])
+
+    batch = parse_recommendations(payload, expected_source=RecommendationSource.GROQ_LLM)
+    assert isinstance(batch, RecommendationBatch)
+    assert len(batch.recommendations) == 1
+
+    item = batch.recommendations[0]
+    assert item.id == "rec-001"
+    assert item.category == RecommendationCategory.BUDGET_ALLOCATION
+    assert item.title == "Scale Search Campaign"
+    assert item.action == "Increase Google Search budget by 15%"
+    assert item.rationale == "Search campaigns demonstrated consistent 3.8x ROAS over 14 days."
+    assert item.description == item.rationale  # Synced for backward compatibility
+    assert item.source == RecommendationSource.GROQ_LLM
+    assert item.supporting_evidence is not None
+    assert item.supporting_evidence.observed_value == 3.8
+    assert item.limitations == ["Requires ongoing bid monitoring"]
+
+
+def test_parse_valid_json_multiple_recommendations():
+    """Verify parsing multiple recommendation items across diverse valid categories."""
+    payload = json.dumps([
+        {
+            "id": "rec-001",
+            "category": "waste_reduction",
+            "title": "Pause High CPA Campaigns",
+            "action": "Pause Facebook Retargeting Ad Set 2",
+            "rationale": "Observed CPA of $85.50 exceeds the account average of $24.00.",
+            "supporting_evidence": {"metric": "cpa", "observed_value": 85.50},
+            "source": "groq_llm",
+        },
+        {
+            "id": "rec-002",
+            "category": "creative_optimization",
+            "title": "Refresh Ad Creatives",
+            "action": "Deploy new video assets for Instagram Story ad group",
+            "rationale": "CTR dropped from 2.8% to 0.9% indicating creative fatigue.",
+            "supporting_evidence": {"metric": "ctr", "observed_value": 0.9},
+            "source": "groq_llm",
+        },
+        {
+            "id": "rec-003",
+            "category": "data_tracking",
+            "title": "Fix Revenue Tracking Discrepancy",
+            "action": "Verify server-side conversion API implementation",
+            "rationale": "Total revenue is reported as untracked across 4 campaigns.",
+            "source": "groq_llm",
+        },
+    ])
+
+    batch = parse_recommendations(payload)
+    assert len(batch.recommendations) == 3
+    assert batch.recommendations[0].category == RecommendationCategory.WASTE_REDUCTION
+    assert batch.recommendations[1].category == RecommendationCategory.CREATIVE_OPTIMIZATION
+    assert batch.recommendations[2].category == RecommendationCategory.DATA_TRACKING
+
+
+def test_parse_valid_empty_recommendation_list():
+    """Verify empty list and object with empty list produce valid empty RecommendationBatch."""
+    batch_array = parse_recommendations("[]")
+    assert isinstance(batch_array, RecommendationBatch)
+    assert len(batch_array.recommendations) == 0
+
+    batch_obj = parse_recommendations('{"recommendations": []}', dataset_id="ds-123")
+    assert isinstance(batch_obj, RecommendationBatch)
+    assert len(batch_obj.recommendations) == 0
+    assert batch_obj.dataset_id == "ds-123"
+
+
+def test_parse_markdown_code_fence_json_wrapper():
+    """Verify parser strips surrounding ```json ... ``` code fence cleanly."""
+    raw_response = """```json
+[
+  {
+    "id": "rec-101",
+    "category": "channel_scaling",
+    "title": "Scale YouTube Ads",
+    "action": "Allocate 10% more budget to YouTube Video Reach",
+    "rationale": "High view-through conversion rate with low CPM.",
+    "source": "groq_llm"
+  }
+]
+```"""
+    batch = parse_recommendations(raw_response)
+    assert len(batch.recommendations) == 1
+    assert batch.recommendations[0].id == "rec-101"
+    assert batch.recommendations[0].category == RecommendationCategory.CHANNEL_SCALING
+
+
+def test_parse_markdown_code_fence_raw_backticks():
+    """Verify parser strips plain ``` ... ``` fence without language specifier."""
+    raw_response = """```
+[
+  {
+    "id": "rec-102",
+    "category": "budget_allocation",
+    "title": "Optimize Allocation",
+    "action": "Shift budget to top performers",
+    "rationale": "ROAS higher in top quartile.",
+    "source": "groq_llm"
+  }
+]
+```"""
+    batch = parse_recommendations(raw_response)
+    assert len(batch.recommendations) == 1
+    assert batch.recommendations[0].id == "rec-102"
+
+
+def test_parse_malformed_and_truncated_json():
+    """Verify malformed or truncated JSON raises ResponseParsingError."""
+    with pytest.raises(ResponseParsingError):
+        parse_recommendations('[{"id": "rec-1", "title": "Truncated')
+
+    with pytest.raises(ResponseParsingError):
+        parse_recommendations("{not valid json}")
+
+    with pytest.raises(ResponseParsingError):
+        parse_recommendations("")
+
+    with pytest.raises(ResponseParsingError):
+        parse_recommendations("   \n\t  ")
+
+
+def test_parse_unclosed_markdown_code_fence():
+    """Verify unclosed markdown code fence raises ResponseParsingError."""
+    unclosed = "```json\n[{\"id\": \"rec-1\"}]"
+    with pytest.raises(ResponseParsingError, match="Malformed markdown code fence"):
+        parse_recommendations(unclosed)
+
+
+def test_parse_missing_required_fields():
+    """Verify recommendation missing required fields raises ResponseValidationError."""
+    # Missing 'action'
+    payload_missing_action = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "Some Title",
+            "rationale": "Some Rationale",
+            "source": "groq_llm",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="action"):
+        parse_recommendations(payload_missing_action)
+
+    # Missing 'title'
+    payload_missing_title = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "action": "Some Action",
+            "rationale": "Some Rationale",
+            "source": "groq_llm",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="title"):
+        parse_recommendations(payload_missing_title)
+
+    # Missing 'id'
+    payload_missing_id = json.dumps([
+        {
+            "category": "budget_allocation",
+            "title": "Some Title",
+            "action": "Some Action",
+            "rationale": "Some Rationale",
+            "source": "groq_llm",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="id"):
+        parse_recommendations(payload_missing_id)
+
+
+def test_parse_invalid_category_rejected():
+    """Verify invalid category values not in RecommendationCategory enum are rejected."""
+    payload = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "super_growth_hacking",
+            "title": "Title",
+            "action": "Action",
+            "rationale": "Rationale",
+            "source": "groq_llm",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="category"):
+        parse_recommendations(payload)
+
+
+def test_parse_invalid_source_rejected():
+    """Verify invalid source values not in RecommendationSource are rejected."""
+    payload = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "Title",
+            "action": "Action",
+            "rationale": "Rationale",
+            "source": "chatgpt_pro",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="source"):
+        parse_recommendations(payload)
+
+
+def test_parse_forbids_non_finite_numeric_evidence_unquoted_nan_inf():
+    """Verify unquoted NaN, Infinity, -Infinity are rejected during strict JSON decoding."""
+    payload_nan = '[{"id": "rec-1", "category": "budget_allocation", "title": "T", "action": "A", "rationale": "R", "source": "groq_llm", "supporting_evidence": {"metric": "roas", "observed_value": NaN}}]'
+    with pytest.raises(ResponseParsingError, match="Non-finite numeric constant"):
+        parse_recommendations(payload_nan)
+
+    payload_inf = '[{"id": "rec-1", "category": "budget_allocation", "title": "T", "action": "A", "rationale": "R", "source": "groq_llm", "supporting_evidence": {"metric": "roas", "observed_value": Infinity}}]'
+    with pytest.raises(ResponseParsingError, match="Non-finite numeric constant"):
+        parse_recommendations(payload_inf)
+
+
+def test_parse_forbids_non_finite_numeric_evidence_quoted_nan_inf():
+    """Verify string 'NaN' or 'Infinity' in numeric evidence raises ResponseValidationError."""
+    payload_nan_str = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "T",
+            "action": "A",
+            "rationale": "R",
+            "source": "groq_llm",
+            "supporting_evidence": {"metric": "roas", "observed_value": "NaN"},
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="finite"):
+        parse_recommendations(payload_nan_str)
+
+
+def test_parse_unexpected_top_level_structures():
+    """Verify primitive types, dicts without recommendations, or non-list recommendations are rejected."""
+    # Primitive int
+    with pytest.raises(ResponseValidationError, match="Unexpected top-level JSON type"):
+        parse_recommendations("42")
+
+    # Primitive string
+    with pytest.raises(ResponseValidationError, match="Unexpected top-level JSON type"):
+        parse_recommendations('"just a string"')
+
+    # Dict without 'recommendations'
+    with pytest.raises(ResponseValidationError, match="expected 'recommendations' key"):
+        parse_recommendations('{"insights": [{"id": "1"}]}')
+
+    # Dict with non-list 'recommendations'
+    with pytest.raises(ResponseValidationError, match="must be a list"):
+        parse_recommendations('{"recommendations": "not a list"}')
+
+
+def test_parse_batch_rejects_if_any_item_invalid():
+    """Verify all-or-nothing validation: entire batch is rejected if one item fails validation."""
+    payload = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "Valid First Item",
+            "action": "Action 1",
+            "rationale": "Rationale 1",
+            "source": "groq_llm",
+        },
+        {
+            "id": "rec-2",
+            "category": "invalid_category_xyz",
+            "title": "Invalid Second Item",
+            "action": "Action 2",
+            "rationale": "Rationale 2",
+            "source": "groq_llm",
+        },
+        {
+            "id": "rec-3",
+            "category": "creative_optimization",
+            "title": "Valid Third Item",
+            "action": "Action 3",
+            "rationale": "Rationale 3",
+            "source": "groq_llm",
+        },
+    ])
+    with pytest.raises(ResponseValidationError, match="category"):
+        parse_recommendations(payload)
+
+
+def test_parse_legacy_description_rationale_compatibility():
+    """Verify legacy 'description' field populates 'rationale' and vice-versa while preserving distinction."""
+    # Only description provided
+    payload_desc_only = json.dumps([
+        {
+            "id": "rec-legacy-01",
+            "category": "budget_allocation",
+            "title": "Legacy Item",
+            "action": "Legacy Action",
+            "description": "Legacy Description Text",
+            "source": "deterministic_fallback",
+        }
+    ])
+    batch_desc = parse_recommendations(payload_desc_only)
+    assert batch_desc.recommendations[0].rationale == "Legacy Description Text"
+    assert batch_desc.recommendations[0].description == "Legacy Description Text"
+
+    # Distinct rationale and description provided
+    payload_distinct = json.dumps([
+        {
+            "id": "rec-distinct-01",
+            "category": "budget_allocation",
+            "title": "Distinct Item",
+            "action": "Action",
+            "rationale": "Analytical rationale with evidence.",
+            "description": "User facing display summary.",
+            "source": "groq_llm",
+        }
+    ])
+    batch_distinct = parse_recommendations(payload_distinct)
+    assert batch_distinct.recommendations[0].rationale == "Analytical rationale with evidence."
+    assert batch_distinct.recommendations[0].description == "User facing display summary."
+
+
+def test_parse_source_attribution_constraints_and_enforcement():
+    """Verify expected_source enforcement prevents false source claims."""
+    # Caller expects live Groq output, but model claims fallback
+    payload_fallback = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "T",
+            "action": "A",
+            "rationale": "R",
+            "source": "deterministic_fallback",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="Source attribution mismatch"):
+        parse_recommendations(
+            payload_fallback,
+            expected_source=RecommendationSource.GROQ_LLM,
+            enforce_source=True,
+        )
+
+    # Caller expects fallback, but model falsely claims groq_llm
+    payload_llm = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "T",
+            "action": "A",
+            "rationale": "R",
+            "source": "groq_llm",
+        }
+    ])
+    with pytest.raises(ResponseValidationError, match="Source attribution mismatch"):
+        parse_recommendations(
+            payload_llm,
+            expected_source=RecommendationSource.DETERMINISTIC_FALLBACK,
+            enforce_source=True,
+        )
+
+    # Source omitted by model, caller supplies expected source -> safely assigned
+    payload_no_source = json.dumps([
+        {
+            "id": "rec-1",
+            "category": "budget_allocation",
+            "title": "T",
+            "action": "A",
+            "rationale": "R",
+        }
+    ])
+    batch = parse_recommendations(
+        payload_no_source,
+        expected_source=RecommendationSource.GROQ_LLM,
+        enforce_source=True,
+    )
+    assert batch.recommendations[0].source == RecommendationSource.GROQ_LLM
+
+
+def test_parse_backend_serialization_compatibility():
+    """Verify parse_recommendation_list returns dictionaries matching backend AnalysisResult schema."""
+    payload = json.dumps([
+        {
+            "id": "rec-backend-01",
+            "category": "budget_allocation",
+            "title": "Backend Compat Title",
+            "action": "Backend Action",
+            "rationale": "Backend Rationale",
+            "source": "groq_llm",
+        }
+    ])
+    rec_list = parse_recommendation_list(payload)
+    assert isinstance(rec_list, list)
+    assert len(rec_list) == 1
+    rec = rec_list[0]
+    assert isinstance(rec, dict)
+    assert rec["id"] == "rec-backend-01"
+    assert rec["title"] == "Backend Compat Title"
+    assert rec["action"] == "Backend Action"
+    assert rec["description"] == "Backend Rationale"
+    assert rec["category"] == "budget_allocation"
+    assert rec["source"] == "groq_llm"
+
+
+def test_prompt_documented_output_matches_canonical_schema():
+    """Verify that the JSON example structure documented in RECOMMENDATION_SYSTEM_PROMPT is strictly valid."""
+    # Concrete instance conforming to prompt section III format
+    prompt_example_instance = json.dumps([
+        {
+            "id": "rec-001",
+            "category": "budget_allocation",
+            "title": "Scale High-ROAS Search Campaigns",
+            "action": "Increase daily budget by 15%",
+            "rationale": "Search campaigns demonstrated consistent 3.8x ROAS over the 14-day evaluation window.",
+            "supporting_evidence": {
+                "metric": "roas",
+                "observed_value": 3.8,
+                "campaign_name": "Google_Search_Brand",
+                "dimension": "channel",
+                "dimension_value": "Google Search",
+                "benchmark_value": None,
+            },
+            "limitations": [
+                "Budget scaling should be evaluated incrementally to prevent CPC inflation."
+            ],
+            "source": "groq_llm",
+        }
+    ])
+
+    batch = parse_recommendations(prompt_example_instance, expected_source=RecommendationSource.GROQ_LLM)
+    assert len(batch.recommendations) == 1
+    item = batch.recommendations[0]
+    assert item.id == "rec-001"
+    assert item.category == RecommendationCategory.BUDGET_ALLOCATION
+    assert item.supporting_evidence.metric == "roas"
+
+
+def test_package_exports_for_phase_5_4():
+    """Verify all Phase 5.4 classes and functions are cleanly exported from analytics.ai."""
+    assert hasattr(ai_package, "RecommendationListResponse")
+    assert hasattr(ai_package, "RecommendationParserError")
+    assert hasattr(ai_package, "ResponseParsingError")
+    assert hasattr(ai_package, "ResponseValidationError")
+    assert hasattr(ai_package, "extract_json_payload")
+    assert hasattr(ai_package, "parse_recommendations")
+    assert hasattr(ai_package, "parse_recommendation_list")
+    assert ai_package.RecommendationListResponse is RecommendationBatch
+

@@ -49,7 +49,7 @@ II. SECURITY & PROMPT-INJECTION DEFENSE
 =============================================================================
 III. OUTPUT FORMAT SPECIFICATION (STRICT JSON ONLY)
 =============================================================================
-Respond with a single valid JSON array of objects adhering strictly to the Market Orbit RecommendationItem schema.
+Respond with a valid JSON array of objects (or an object with a "recommendations" array) adhering strictly to the Market Orbit RecommendationItem schema.
 Do NOT include markdown fences (```json), conversational commentary, or trailing text.
 
 Output structure for each recommendation object:
