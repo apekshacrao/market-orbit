@@ -391,3 +391,37 @@ def test_regression_existing_cohort_entrypoint():
     res_reexport = reexported_profile(df)
     res_pkg = package_profile(df)
     assert res_direct == res_reexport == res_pkg
+
+
+def test_input_dataframe_immutability():
+    """17. Neither classify_campaign_cohorts nor profile_segment_portfolio mutates caller DataFrame."""
+    df = pd.DataFrame([
+        {"campaign_name": "Camp Alpha", "customer_segment": "Enterprise", "spend": 150.0, "conversions": 15, "revenue": 300.0},
+        {"campaign_name": "Camp Beta", "customer_segment": "SMB", "spend": 250.0, "conversions": 25, "revenue": 500.0},
+    ])
+    df_copy = df.copy(deep=True)
+
+    profile_segment_portfolio(df)
+    pd.testing.assert_frame_equal(df, df_copy)
+
+    classify_campaign_cohorts(df)
+    pd.testing.assert_frame_equal(df, df_copy)
+
+
+def test_invalid_revenue_string_and_whitespace_trimming():
+    """18. Non-numeric revenue strings are safely coerced to None without raising exceptions."""
+    df = pd.DataFrame([
+        {"customer_segment": " Enterprise ", "spend": 100.0, "conversions": 10, "revenue": "untracked_str"},
+        {"customer_segment": "Enterprise", "spend": 100.0, "conversions": 10, "revenue": 200.0},
+    ])
+    result = profile_segment_portfolio(df)
+
+    assert result["is_available"] is True
+    assert result["total_segments"] == 1
+    ent = result["segments"]["Enterprise"]
+    assert ent["spend"] == 200.0
+    assert ent["conversions"] == 20
+    assert ent["revenue"] is None  # 'untracked_str' means incomplete revenue
+    assert ent["roas"] is None
+    assert ent["share_of_revenue"] is None
+
