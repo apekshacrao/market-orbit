@@ -1,22 +1,23 @@
 import React from 'react';
 
-export default function KpiCards({ kpis = {} }) {
-  const cards = [
-    { label: 'Total Spend', value: kpis.totalSpend || '$0' },
-    { label: 'Total Revenue', value: kpis.totalRevenue || '$0' },
-    { label: 'Overall ROAS', value: kpis.overallRoas || '0.0x' },
-    { label: 'Avg Conversion Rate', value: kpis.avgConversionRate || '0.0%' },
-    { label: 'Avg CPA', value: kpis.avgCpa || '$0.00' },
-  ];
+const sampleKpis = [
+  { title: 'Total Spend', value: '₹1,25,000', change: '+8.2%' },
+  { title: 'Total Revenue', value: '₹3,75,000', change: '+12.5%' },
+  { title: 'Overall ROAS', value: '3.0x', change: '+5.4%' },
+  { title: 'Conversion Rate', value: '4.8%', change: '+1.2%' },
+  { title: 'Average CPA', value: '₹250', change: '-6.3%' },
+];
 
+export default function KpiCards() {
   return (
-    <div className="kpi-cards-grid">
-      {cards.map((card, idx) => (
-        <div key={idx} className="kpi-card">
-          <span className="kpi-label">{card.label}</span>
-          <span className="kpi-value">{card.value}</span>
-        </div>
+    <section className="kpi-grid">
+      {sampleKpis.map((kpi) => (
+        <article className="kpi-card" key={kpi.title}>
+          <p className="kpi-title">{kpi.title}</p>
+          <h2 className="kpi-value">{kpi.value}</h2>
+          <span className="kpi-change">{kpi.change} vs previous period</span>
+        </article>
       ))}
-    </div>
+    </section>
   );
 }

@@ -1,9 +1,8 @@
 import React from 'react';
 import Navbar from '../components/common/Navbar';
 import Sidebar from '../components/common/Sidebar';
-import KpiCards from '../components/dashboard/KpiCards';
 import CampaignRanking from '../components/dashboard/CampaignRanking';
-
+import KpiCards from '../components/dashboard/KpiCards';
 
 export default function Dashboard() {
   const topCampaigns = [
@@ -28,6 +27,8 @@ export default function Dashboard() {
       <main className="dashboard-content">
         <h1>Dashboard</h1>
         <p>Welcome to your marketing performance dashboard.</p>
+        <KpiCards />
+        <CampaignRanking />
       </main>
     </div>
   </div>
