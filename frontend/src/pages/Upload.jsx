@@ -56,11 +56,37 @@ export default function Upload() {
               <p className="upload-error">{error}</p>
             )}
 
-            {file && (
-              <p className="selected-file">
-                Selected: {file.name}
-              </p>
-            )}
+           {file && (
+  <div className="selected-file-card">
+    <div>
+      <strong>{file.name}</strong>
+      <p>{(file.size / 1024).toFixed(2)} KB</p>
+    </div>
+
+    <button
+      type="button"
+      className="remove-file-button"
+      onClick={() => {
+        setFile(null);
+        setError('');
+      }}
+    >
+      Remove
+    </button>
+  </div>
+)}
+
+<button
+  type="button"
+  className="upload-button"
+  disabled={!file}
+  onClick={() => {
+    alert('Backend upload integration is coming soon!');
+  }}
+>
+  Upload Dataset
+</button>
+
           </div>
         </div>
       </main>
