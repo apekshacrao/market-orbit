@@ -5,6 +5,7 @@ import CampaignRanking from '../components/dashboard/CampaignRanking';
 import KpiCards from '../components/dashboard/KpiCards';
 import TrendCharts from '../components/dashboard/TrendCharts';
 import PerformanceChart from '../components/dashboard/PerformanceChart';
+import AiRecommendations from '../components/dashboard/AiRecommendations';
 
 export default function Dashboard() {
   const topCampaigns = [
@@ -36,6 +37,7 @@ export default function Dashboard() {
 />
 <PerformanceChart />
 <TrendCharts />
+<AiRecommendations />
 
       </main>
     </div>
