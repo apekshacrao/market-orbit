@@ -3,6 +3,8 @@ import Navbar from '../components/common/Navbar';
 import Sidebar from '../components/common/Sidebar';
 import CampaignRanking from '../components/dashboard/CampaignRanking';
 import KpiCards from '../components/dashboard/KpiCards';
+import TrendCharts from '../components/dashboard/TrendCharts';
+import PerformanceChart from '../components/dashboard/PerformanceChart';
 
 export default function Dashboard() {
   const topCampaigns = [
@@ -28,7 +30,13 @@ export default function Dashboard() {
         <h1>Dashboard</h1>
         <p>Welcome to your marketing performance dashboard.</p>
         <KpiCards />
-        <CampaignRanking />
+<CampaignRanking
+  topCampaigns={topCampaigns}
+  bottomCampaigns={bottomCampaigns}
+/>
+<PerformanceChart />
+<TrendCharts />
+
       </main>
     </div>
   </div>
