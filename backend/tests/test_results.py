@@ -261,7 +261,10 @@ def test_existing_analysis_result_is_reused():
             dataset_query if model.__name__ == "Dataset"
             else analysis_result_query if model.__name__ == "AnalysisResult"
             else campaign_query
-        )
+        ),
+        commit=lambda: None,
+        refresh=lambda obj: None,
+        rollback=lambda: None,
     )
 
     result = AnalysisService.get_results(
@@ -546,7 +549,8 @@ def test_cached_result_uses_contract_adapter_and_dated_source_campaigns():
     ))
     db = SimpleNamespace(query=lambda model: {
         "Dataset": dataset_query, "AnalysisResult": result_query, "Campaign": campaign_query,
-    }[model.__name__])
+    }[model.__name__], commit=lambda: None, refresh=lambda obj: None,
+        rollback=lambda: None)
 
     result = AnalysisService.get_results("dataset-1", "user-1", db)
     assert result["kpis"] == {
@@ -558,6 +562,220 @@ def test_cached_result_uses_contract_adapter_and_dated_source_campaigns():
         {"date": "2026-10-03", "spend": 20.0, "revenue": None, "conversions": 1}
     ]
     assert AnalysisResultResponse.model_validate(result)
+
+
+def _make_cache_db(cached, campaigns, commit_error=None):
+    dataset = SimpleNamespace(user_id="user-1")
+    added = []
+    state = {"commits": 0, "rollbacks": 0}
+    dataset_query = SimpleNamespace(filter=lambda _: SimpleNamespace(first=lambda: dataset))
+    result_query = SimpleNamespace(filter=lambda _: SimpleNamespace(
+        order_by=lambda _: SimpleNamespace(first=lambda: cached)
+    ))
+    campaign_query = SimpleNamespace(filter=lambda _: SimpleNamespace(
+        order_by=lambda _: SimpleNamespace(all=lambda: campaigns)
+    ))
+
+    def commit():
+        state["commits"] += 1
+        if commit_error:
+            raise commit_error
+
+    db = SimpleNamespace(
+        query=lambda model: {
+            "Dataset": dataset_query,
+            "AnalysisResult": result_query,
+            "Campaign": campaign_query,
+        }[model.__name__],
+        add=added.append,
+        commit=commit,
+        refresh=lambda obj: None,
+        rollback=lambda: state.__setitem__("rollbacks", state["rollbacks"] + 1),
+    )
+    return db, added, state
+
+
+def test_results_orchestrate_and_store_new_analytics_payloads():
+    db, saved = _make_mock_db_and_campaigns()
+    frames = []
+
+    def capture_frame(frame):
+        frames.append(frame)
+        assert "customer_segment" in frame.columns
+        assert "date" in frame.columns
+        return {"ok": True}
+
+    class Recommendations:
+        def get_recommendation_list(self, **kwargs):
+            return [{"title": "existing recommendation"}]
+
+    with patch("app.services.analysis_service.classify_campaign_cohorts",
+               side_effect=capture_frame) as cohorts, \
+         patch("app.services.analysis_service.profile_segment_portfolio",
+               side_effect=capture_frame) as portfolio, \
+         patch("app.services.analysis_service.run_forecasting_analysis",
+               side_effect=capture_frame) as forecast:
+        result = AnalysisService.get_results(
+            "dataset-p57", "user-1", db, recommendation_service=Recommendations()
+        )
+
+    assert cohorts.call_count == portfolio.call_count == forecast.call_count == 1
+    assert frames[0] is frames[1] is frames[2]
+    assert result["segmentation"] == {
+        "cohorts": {"ok": True}, "segment_portfolio": {"ok": True}
+    }
+    assert result["forecasting"] == {"ok": True}
+    assert saved[0].trends["segmentation"] == result["segmentation"]
+    assert saved[0].trends["forecasting"] == result["forecasting"]
+    assert "time_series" in saved[0].trends
+
+
+def test_results_preserve_unavailable_forecasts_and_segment_labels():
+    # Use actual analytics with missing dates and unpopulated segment labels.
+    campaign = SimpleNamespace(
+        campaign_name="No date", channel="Search", impressions=10, clicks=1,
+        spend=10, conversions=1, revenue=None, date=None, location=None,
+        age_group=None, customer_segment=" ", device=None,
+    )
+    db, _, _ = _make_cache_db(
+        SimpleNamespace(kpis=None, rankings=None, trends=None, ai_recommendations=None),
+        [campaign],
+    )
+    # Force a cache miss for this test.
+    result_query = SimpleNamespace(filter=lambda _: SimpleNamespace(
+        order_by=lambda _: SimpleNamespace(first=lambda: None)
+    ))
+    original_query = db.query
+    db.query = lambda model: result_query if model.__name__ == "AnalysisResult" else original_query(model)
+
+    class Recommendations:
+        def get_recommendation_list(self, **kwargs):
+            return []
+
+    result = AnalysisService.get_results(
+        "dataset-1", "user-1", db, recommendation_service=Recommendations()
+    )
+
+    assert result["forecasting"]["is_available"] is False
+    assert result["forecasting"]["status"] == "no_valid_dates"
+    assert result["forecasting"]["warnings"]
+    assert result["segmentation"]["segment_portfolio"] == {
+        "is_available": False, "total_segments": 0, "segments": {}
+    }
+    assert result["segmentation"]["cohorts"]["summary"]["total_campaigns"] == 1
+
+
+def test_cached_sections_are_reused_without_recomputation():
+    segmentation = {"cohorts": {"cached": True}, "segment_portfolio": {"cached": True}}
+    forecasting = {"status": "cached", "validation": {"models": {"naive": {}}}}
+    cached = SimpleNamespace(
+        kpis={"total_spend": 10}, rankings={},
+        trends={"existing_trend_key": {"keep": True},
+                "segmentation": segmentation, "forecasting": forecasting},
+        ai_recommendations=[],
+    )
+    campaign = SimpleNamespace(
+        campaign_name="A", channel="Search", impressions=1, clicks=1,
+        spend=10, conversions=1, revenue=None, date=None, location=None,
+        age_group=None, customer_segment=None, device=None,
+    )
+    db, _, state = _make_cache_db(cached, [campaign])
+    with patch("app.services.analysis_service.classify_campaign_cohorts") as c, \
+         patch("app.services.analysis_service.profile_segment_portfolio") as p, \
+         patch("app.services.analysis_service.run_forecasting_analysis") as f:
+        result = AnalysisService.get_results("dataset-1", "user-1", db)
+    c.assert_not_called()
+    p.assert_not_called()
+    f.assert_not_called()
+    assert state["commits"] == 0
+    assert result["segmentation"] == segmentation
+    assert result["forecasting"] == forecasting
+
+
+def test_legacy_cache_hydrates_both_sections_and_preserves_existing_data():
+    cached = SimpleNamespace(
+        kpis={"total_spend": 22}, rankings={"top": [], "bottom": []},
+        trends={"time_series": {"legacy": True}, "channel_breakdown": {"Search": {}}},
+        ai_recommendations=[{"title": "keep me"}],
+    )
+    campaign = SimpleNamespace(
+        campaign_name="A", channel="Search", impressions=1, clicks=1,
+        spend=22, conversions=2, revenue=None, date=None, location=None,
+        age_group=None, customer_segment="Returning", device=None,
+    )
+    db, added, state = _make_cache_db(cached, [campaign])
+    with patch("app.services.analysis_service.classify_campaign_cohorts",
+               return_value={"summary": {"total_campaigns": 1}}) as c, \
+         patch("app.services.analysis_service.profile_segment_portfolio",
+               return_value={"is_available": True, "segments": {}}) as p, \
+         patch("app.services.analysis_service.run_forecasting_analysis",
+               return_value={"status": "no_valid_dates", "warnings": ["none"]}) as f:
+        result = AnalysisService.get_results("dataset-1", "user-1", db)
+
+    assert c.call_count == p.call_count == f.call_count == 1
+    assert state["commits"] == 1
+    assert added == []
+    assert cached.trends["time_series"] == {"legacy": True}
+    assert cached.trends["channel_breakdown"] == {"Search": {}}
+    assert cached.kpis == {"total_spend": 22}
+    assert cached.rankings == {"top": [], "bottom": []}
+    assert cached.ai_recommendations == [{"title": "keep me"}]
+    assert result["segmentation"]["cohorts"] == {"summary": {"total_campaigns": 1}}
+    assert result["forecasting"]["warnings"] == ["none"]
+
+
+def test_legacy_cache_hydrates_only_missing_section():
+    segmentation = {"cohorts": {}, "segment_portfolio": {"is_available": False}}
+    cached = SimpleNamespace(
+        kpis={}, rankings={}, trends={"segmentation": segmentation},
+        ai_recommendations=[],
+    )
+    db, _, state = _make_cache_db(cached, [])
+    forecasting = {"status": "no_valid_dates", "validation": {"models": {}}}
+    with patch("app.services.analysis_service.classify_campaign_cohorts") as c, \
+         patch("app.services.analysis_service.profile_segment_portfolio") as p, \
+         patch("app.services.analysis_service.run_forecasting_analysis",
+               return_value=forecasting) as f:
+        result = AnalysisService.get_results("dataset-1", "user-1", db)
+    c.assert_not_called()
+    p.assert_not_called()
+    f.assert_called_once()
+    assert state["commits"] == 1
+    assert result["segmentation"] == segmentation
+    assert result["forecasting"] == forecasting
+
+
+def test_legacy_cache_hydration_rolls_back_and_propagates_commit_error():
+    cached = SimpleNamespace(kpis={}, rankings={}, trends={"legacy": True},
+                             ai_recommendations=[])
+    db, _, state = _make_cache_db(cached, [], RuntimeError("commit failed"))
+    with patch("app.services.analysis_service.classify_campaign_cohorts", return_value={}), \
+         patch("app.services.analysis_service.profile_segment_portfolio", return_value={}), \
+         patch("app.services.analysis_service.run_forecasting_analysis", return_value={}):
+        with pytest.raises(RuntimeError, match="commit failed"):
+            AnalysisService.get_results("dataset-1", "user-1", db)
+    assert state["commits"] == 1
+    assert state["rollbacks"] == 1
+
+
+def test_legacy_cache_hydration_rolls_back_and_propagates_refresh_error():
+    cached = SimpleNamespace(kpis={}, rankings={}, trends={"legacy": True},
+                             ai_recommendations=[])
+    db, added, state = _make_cache_db(cached, [])
+
+    def fail_refresh(obj):
+        raise RuntimeError("refresh failed")
+
+    db.refresh = fail_refresh
+    with patch("app.services.analysis_service.classify_campaign_cohorts", return_value={}), \
+         patch("app.services.analysis_service.profile_segment_portfolio", return_value={}), \
+         patch("app.services.analysis_service.run_forecasting_analysis", return_value={}):
+        with pytest.raises(RuntimeError, match="refresh failed"):
+            AnalysisService.get_results("dataset-1", "user-1", db)
+
+    assert state["commits"] == 1
+    assert state["rollbacks"] == 1
+    assert added == []
 
 
 def test_get_kpis_returns_contract_fields_from_cached_analysis():
@@ -576,7 +794,9 @@ def test_get_kpis_returns_contract_fields_from_cached_analysis():
             order_by=lambda _: SimpleNamespace(all=lambda: [])
         )),
     }
-    db = SimpleNamespace(query=lambda model: query_results[model.__name__])
+    db = SimpleNamespace(query=lambda model: query_results[model.__name__],
+                         commit=lambda: None, refresh=lambda obj: None,
+                         rollback=lambda: None)
     assert AnalysisService.get_kpis("dataset-1", "user-1", db) == {
         "totalSpend": 500.0, "totalRevenue": 1500.0, "overallRoas": 3.0,
         "avgConversionRate": 10.0, "avgCpa": 50.0,
@@ -744,7 +964,10 @@ def test_api_get_results_cached_reuse(test_client):
             dataset_query if model.__name__ == "Dataset"
             else analysis_result_query if model.__name__ == "AnalysisResult"
             else campaign_query
-        )
+        ),
+        commit=lambda: None,
+        refresh=lambda obj: None,
+        rollback=lambda: None,
     )
 
     app.dependency_overrides[get_current_user] = lambda: fake_user
@@ -876,7 +1099,10 @@ def test_api_get_kpis_endpoint_success(test_client):
             else analysis_result_query
             if model.__name__ == "AnalysisResult"
             else campaign_query
-        )
+        ),
+        commit=lambda: None,
+        refresh=lambda obj: None,
+        rollback=lambda: None,
     )
 
     app.dependency_overrides[get_current_user] = lambda: fake_user

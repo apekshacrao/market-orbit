@@ -15,13 +15,24 @@ from analytics.preprocessing.cleaner import clean_dataset
 from analytics.kpi.metrics import calculate_kpis
 from analytics.performance.ranking import rank_campaigns
 from analytics.trends.customer_trends import analyze_trends
+from analytics.segmentation.cohorts import classify_campaign_cohorts
+from analytics.segmentation.portfolio import profile_segment_portfolio
+from analytics.forecasting.service import run_forecasting_analysis
 from analytics.ai.service import RecommendationService
 
 
 class AnalysisService:
 
     @staticmethod
-    def _contract_response(dataset_id, kpis, rankings, campaign_data, recommendations):
+    def _contract_response(
+        dataset_id,
+        kpis,
+        rankings,
+        campaign_data,
+        recommendations,
+        segmentation=None,
+        forecasting=None,
+    ):
         """Adapt stored or freshly calculated analytics to the frontend contract."""
         def complete_revenue(rows):
             if not rows or any(row.get("revenue") is None for row in rows):
@@ -95,6 +106,8 @@ class AnalysisService:
             "bottomCampaigns": [campaign_shape(item) for item in rankings.get("bottom", [])],
             "trends": trends,
             "recommendations": recommendations or [],
+            "segmentation": segmentation,
+            "forecasting": forecasting,
         }
 
     @staticmethod
@@ -160,12 +173,46 @@ class AnalysisService:
             campaigns = db.query(Campaign).filter(
                 Campaign.dataset_id == dataset_id
             ).order_by(Campaign.created_at.asc()).all()
+            campaign_data = AnalysisService._campaign_data(campaigns)
+            stored_trends = existing_result.trends
+            if stored_trends is None:
+                stored_trends = {}
+            elif not isinstance(stored_trends, dict):
+                raise TypeError("Stored analysis trends must be a JSON object")
+            else:
+                stored_trends = dict(stored_trends)
+
+            segmentation = stored_trends.get("segmentation")
+            forecasting = stored_trends.get("forecasting")
+            if segmentation is None or forecasting is None:
+                df = clean_dataset(campaign_data)
+                if segmentation is None:
+                    segmentation = {
+                        "cohorts": classify_campaign_cohorts(df),
+                        "segment_portfolio": profile_segment_portfolio(df),
+                    }
+                    stored_trends["segmentation"] = segmentation
+                if forecasting is None:
+                    forecasting = run_forecasting_analysis(df)
+                    stored_trends["forecasting"] = forecasting
+
+                # Assign a fresh object so SQLAlchemy detects the JSONB update.
+                existing_result.trends = stored_trends
+                try:
+                    db.commit()
+                    db.refresh(existing_result)
+                except Exception:
+                    db.rollback()
+                    raise
+
             return AnalysisService._contract_response(
                 dataset_id,
                 existing_result.kpis or {},
                 existing_result.rankings or {},
-                AnalysisService._campaign_data(campaigns),
+                campaign_data,
                 existing_result.ai_recommendations or [],
+                segmentation,
+                forecasting,
             )
 
         # Fetch campaigns belonging to the dataset
@@ -186,6 +233,11 @@ class AnalysisService:
         kpis = calculate_kpis(df)
         rankings = rank_campaigns(df)
         trends = analyze_trends(df)
+        segmentation = {
+            "cohorts": classify_campaign_cohorts(df),
+            "segment_portfolio": profile_segment_portfolio(df),
+        }
+        forecasting = run_forecasting_analysis(df)
 
         # Generate recommendations using unified RecommendationService
         service = recommendation_service or RecommendationService()
@@ -198,12 +250,17 @@ class AnalysisService:
         )
 
         # Store analysis result
+        persisted_trends = {
+            **trends,
+            "segmentation": segmentation,
+            "forecasting": forecasting,
+        }
         analysis_result = AnalysisResult(
             id=str(uuid4()),
             dataset_id=dataset_id,
             kpis=kpis,
             rankings=rankings,
-            trends=trends,
+            trends=persisted_trends,
             ai_recommendations=recommendations,
         )
 
@@ -216,7 +273,13 @@ class AnalysisService:
             raise
 
         return AnalysisService._contract_response(
-            dataset_id, kpis, rankings, campaign_data, recommendations
+            dataset_id,
+            kpis,
+            rankings,
+            campaign_data,
+            recommendations,
+            segmentation,
+            forecasting,
         )
 
     @staticmethod
