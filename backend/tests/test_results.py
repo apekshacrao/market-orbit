@@ -6,6 +6,33 @@ from app.services.analysis_service import AnalysisService
 from app.schemas.result import AnalysisResultResponse
 from unittest.mock import patch
 
+
+def test_analysis_result_schema_supports_legacy_and_extended_payloads():
+    legacy_payload = {
+        "dataset_id": "dataset-1",
+        "kpis": {"totalSpend": 0},
+        "performance": [],
+        "topCampaigns": [],
+        "bottomCampaigns": [],
+        "trends": [],
+        "recommendations": [],
+    }
+
+    legacy_result = AnalysisResultResponse.model_validate(legacy_payload)
+    assert legacy_result.segmentation is None
+    assert legacy_result.forecasting is None
+
+    extended_payload = {
+        **legacy_payload,
+        "segmentation": {"cohorts": {"summary": {"total_campaigns": 0}}},
+        "forecasting": {"is_available": False, "status": "no_valid_dates"},
+    }
+    extended_result = AnalysisResultResponse.model_validate(extended_payload)
+
+    assert extended_result.segmentation == extended_payload["segmentation"]
+    assert extended_result.forecasting == extended_payload["forecasting"]
+
+
 def test_dataset_not_found():
     db = SimpleNamespace(
         query=lambda model: SimpleNamespace(
