@@ -1,0 +1,15 @@
+* [33m16c0ad7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfrontend[m[33m, [m[1;32mmain[m[33m)[m feat(frontend): add main dashboard layout
+* [33mb0e87f3[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat(frontend): add login and register UI
+* [33m5b2d1bf[m feat(frontend): style login page and configure vite
+*   [33mce4b395[m Merge branch 'frontend'
+[32m|[m[33m\[m  
+[32m|[m * [33mc9d9d4d[m feat(frontend): create login page shell
+[32m|[m *   [33ma104e3d[m Merge branch 'main' of https://github.com/apekshacrao/market-orbit into frontend
+[32m|[m [34m|[m[35m\[m  
+[32m|[m * [35m|[m [33m61b915c[m[33m ([m[1;31morigin/frontend[m[33m)[m chore(frontend): add dependency lockfile
+* [35m|[m [35m|[m   [33m3592ab9[m Merge pull request #5 from apekshacrao/analytics
+[35m|[m[1;31m\[m [35m\[m [35m\[m  
+[35m|[m [1;31m|[m[35m_[m[35m|[m[35m/[m  
+[35m|[m[35m/[m[1;31m|[m [35m|[m   
+[35m|[m * [35m|[m [33maff9c43[m[33m ([m[1;31morigin/analytics[m[33m)[m docs(analytics): add Phase 1 pipeline real end-to-end verification report
+[35m|[m * [35m|[m [33m0cbe53e[m add backend and analytics compatibility fix report

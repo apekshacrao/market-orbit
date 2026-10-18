@@ -1,25 +1,41 @@
 import React from 'react';
+import Navbar from '../components/common/Navbar';
+import Sidebar from '../components/common/Sidebar';
 import KpiCards from '../components/dashboard/KpiCards';
 import CampaignRanking from '../components/dashboard/CampaignRanking';
-import PerformanceChart from '../components/dashboard/PerformanceChart';
-import TrendCharts from '../components/dashboard/TrendCharts';
-import AiRecommendations from '../components/dashboard/AiRecommendations';
-import { useAnalysis } from '../hooks/useAnalysis';
 
 export default function Dashboard() {
-  const { data, loading, error } = useAnalysis();
+  const topCampaigns = [
+    { name: 'Summer Sale', roas: 3.6 },
+    { name: 'Diwali Campaign', roas: 3.0 },
+    { name: 'Product Launch', roas: 2.3 }
+  ];
 
-  if (loading) return <div>Loading dashboard...</div>;
-  if (error) return <div>Error loading analysis: {error}</div>;
+  const bottomCampaigns = [
+    { name: 'Winter Sale', roas: 0.8 },
+    { name: 'Email Campaign', roas: 1.1 },
+    { name: 'Social Campaign', roas: 1.3 }
+  ];
 
   return (
-    <div className="page-container dashboard-page">
-      <h2>Marketing Performance Dashboard</h2>
-      <KpiCards kpis={data?.kpis} />
-      <PerformanceChart data={data?.performance} />
-      <CampaignRanking topCampaigns={data?.topCampaigns} bottomCampaigns={data?.bottomCampaigns} />
-      <TrendCharts trendData={data?.trends} />
-      <AiRecommendations recommendations={data?.recommendations} />
+    <div className="dashboard-page">
+      <Navbar />
+
+      <div className="dashboard-layout">
+        <Sidebar />
+
+        <main className="dashboard-content">
+          <h1>Dashboard</h1>
+          <p>Welcome to your marketing performance dashboard.</p>
+
+          <KpiCards />
+
+          <CampaignRanking
+            topCampaigns={topCampaigns}
+            bottomCampaigns={bottomCampaigns}
+          />
+        </main>
+      </div>
     </div>
   );
 }
