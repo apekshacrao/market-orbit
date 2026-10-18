@@ -1,6 +1,6 @@
-# Market Orbit: Complete Codebase Audit & Progress Report
+# Market Orbit: Complete Codebase Audit & Frontend–Backend Integration Report
 
-**Generated Date:** September 17, 2026  
+**Generated Date:** October 18, 2026
 **Active Branch:** `analytics` (Branched from `main` @ `c20e84c`)  
 **Repository:** `market-orbit`  
 **Lead Analytics / AI Engineer:** Vishal S Naik  
@@ -32,10 +32,10 @@
 
 | Layer / Track | Assigned Owner | Implementation Completeness | Status & Highlights |
 | :--- | :--- | :---: | :--- |
-| **Backend & APIs** | Sushanth S | **85%** | PR #1 merged. Complete JWT auth, CSV file storage, validation, campaign rows ingestion into PostgreSQL, and dataset querying. Results API is currently returning stub/mock data. |
+| **Backend & APIs** | Sushanth S | **85%** | JWT auth, CSV file storage, validation, campaign ingestion, ownership checks, and database-backed results responses are implemented and covered by backend tests. |
 | **Database & Schema** | Sushanth S | **100%** | 5 core relational tables, 5 migration scripts, seed sample data, and SQLAlchemy ORM models configured. |
 | **Analytics & AI** | Vishal S Naik | **35%** | Base calculation functions (cleaning, metrics, ranking, channel trends) exist. Groq AI client is currently a stub returning static data; unit tests are empty `assert True` placeholders. |
-| **Frontend UI** | Apeksha C Rao | **40%** | React + Vite app scaffolded with Dropzone, KPI Cards, and API client. Router, real charting libraries, and dynamic dataset selection are not yet hooked up. |
+| **Frontend UI** | Apeksha C Rao | **40%** | React + Vite app scaffolded with auth forms, CSV upload UI, KPI/ranking components, API clients, and an analysis hook. Application routing, dataset retention, live result loading, and contract-compatible dashboard mapping are not yet hooked up. |
 | **DevOps / Infra** | Shared | **50%** | `docker-compose.yml` configures Postgres, Backend, and Frontend services. `backend/Dockerfile` and `frontend/Dockerfile` are missing. |
 
 ---
@@ -136,7 +136,7 @@ market-orbit/
 │   │       ├── campaign_service.py            # CSV row parser & batch campaign table loader
 │   │       ├── storage_service.py             # File saving, validation & dataset queries
 │   │       ├── validation_service.py          # CSV header validation logic
-│   │       └── analysis_service.py            # [STUB] Returns hardcoded mock KPI numbers
+│   │       └── analysis_service.py            # Database-backed analysis and contract adapter
 │   └── tests/                                 # Pytest backend test suite
 │       ├── test_auth.py                       # Auth unit tests
 │       ├── test_campaign_service.py           # Campaign CSV parsing & row count tests
@@ -227,18 +227,16 @@ market-orbit/
   - Endpoints: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `GET /api/v1/auth/me`.
   - Ownership validation: Ensures users can only access datasets and campaigns they own.
 - **Upload & Dataset Ingestion**:
-  - Validates CSV file extension and mandatory columns (`campaign_name`, `channel`, `spend`, `revenue`).
+  - Validates CSV file extension and mandatory columns (`campaign_name`, `channel`, `spend`, `conversions`); `revenue` is optional and may be stored as `null`.
   - Saves file under `backend/uploads/{uuid}.csv`.
   - Creates a `Dataset` row (`status="PENDING"`).
   - Uses `CampaignService.import_campaigns` to parse rows and bulk insert into PostgreSQL `campaigns` table.
   - Endpoints: `POST /api/v1/uploads/`, `GET /api/v1/uploads/`, `GET /api/v1/uploads/{dataset_id}/status`, `GET /api/v1/uploads/{dataset_id}/campaigns`.
-- **Results API & Gaps**:
-  - `AnalysisService` in `backend/app/services/analysis_service.py` currently returns hardcoded dummy values:
-    ```python
-    "kpis": {"total_spend": 10000, "total_revenue": 35000, "overall_roas": 3.5}
-    ```
-  - It does not yet query campaign records from the database, convert them to a DataFrame, or invoke the `analytics/` pipeline.
-  - It does not persist calculated outputs into the `analysis_results` table.
+- **Results API & integration contract**:
+  - `GET /api/v1/results/{dataset_id}` authenticates the caller, verifies dataset ownership, calculates or reuses the stored analysis, and returns `dataset_id`, `kpis`, `performance`, `topCampaigns`, `bottomCampaigns`, `trends`, `recommendations`, and optional `segmentation` and `forecasting`.
+  - `GET /api/v1/results/{dataset_id}/kpis` returns the KPI object directly; it is not wrapped in a `kpis` property.
+  - KPI and campaign response names are camelCase (`totalSpend`, `overallRoas`, `campaignName`), while internal analytics/storage fields may use snake_case.
+  - Revenue, ROAS, conversion rate, CPA, segmentation, and forecasting values may be `null` or omitted according to the response schema. The frontend must not convert unknown values into measured zeroes.
 
 ### 4.2 Database & Migrations (`database/`)
 - **Status:** **Complete & Aligned**
@@ -265,17 +263,23 @@ market-orbit/
   - No orchestrator function currently exists to run the end-to-end data pipeline from a single entry point.
 
 ### 4.4 Frontend UI (`frontend/`)
-- **Status:** **Scaffolding Complete; Routing & Chart Visualizations Pending**
+- **Status:** **Scaffolding Complete; Backend Contract Wiring Pending**
 - **Implemented**:
   - Clean CSS layout and responsive baseline in `index.css`.
   - Authentication forms (`LoginForm.jsx`, `RegisterForm.jsx`).
   - Drag-and-drop CSV upload dropzone with validation error alerts.
   - Dashboard component layout with KPI metric cards, campaign ranking table, and recommendation cards.
   - Centralized API client (`api/client.js`) handling token storage in `localStorage` and request headers.
-- **Pending / Incomplete**:
-  - `App.jsx` renders `<Dashboard />` unconditionally without client-side routing (`react-router-dom`).
-  - `Dashboard.jsx` calls `useAnalysis()` without passing a `datasetId`.
-  - Chart components (`PerformanceChart.jsx`, `TrendCharts.jsx`) display placeholder `<div>` blocks; no charting library (such as Chart.js, Recharts, or ApexCharts) is installed in `package.json`.
+- **Confirmed integration defects**:
+  - `App.jsx` renders `<Dashboard />` unconditionally. Login, registration, and upload pages are not reachable through the application.
+  - `Upload.jsx` calls the correct multipart endpoint but discards the returned `dataset_id`; no later result request can therefore be made for the uploaded dataset.
+  - `Dashboard.jsx` renders hard-coded campaign rankings and invokes neither `useAnalysis` nor the results API. KPI cards receive no `kpis` prop and therefore display defaults.
+  - `CampaignRanking.jsx` reads `name`, but the backend results contract returns `campaignName`.
+  - The file dropzone advertises `.xlsx` and `.xls`, while the backend accepts only `.csv`.
+  - The registration page logs credentials instead of calling `authApi.register`.
+  - `resultsApi.js` contains `/rankings` and `/recommendations` methods for routes that do not exist in the backend. Those sections are returned by the aggregate results endpoint.
+  - API error parsing does not normalize the backend's object-valued CSV validation `detail`, and upload status requests do not check `response.ok`.
+  - `PerformanceChart.jsx` and `TrendCharts.jsx` are placeholders, but this is a presentation limitation rather than an API contract mismatch.
 
 ### 4.5 System Documentation (`docs/`)
 - **Status:** **Clear & Well-Defined**
@@ -295,34 +299,113 @@ market-orbit/
 
 ## 5. Cross-Cutting Integration & Gap Analysis
 
+The backend API is the source of truth. The frontend must follow this flow:
+
 ```
-[ Frontend: React Dashboard ]
-            │ (1) Sends CSV
+[ Frontend: React App ]
+            │ (1) login → store bearer token
+            │ (2) multipart `file` upload
             ▼
-[ Backend: FastAPI /uploads/ ] ──── (2) Stores ────► [ PostgreSQL (campaigns) ]
+[ Backend: FastAPI /api/v1/uploads/ ] ──► [ PostgreSQL datasets/campaigns ]
             │
-            │ ⚠️ GAP 1: Backend results API does NOT call Analytics Engine
+            │ returns `{ dataset_id, filename, status, message }`
             ▼
-[ Analytics Engine (Pandas + Groq) ]
-    ├── Data Cleaning & Validation  (Ready)
-    ├── KPI & Ranking Calculations  (Ready)
-    ├── Channel Trends              (Ready)
-    └── ⚠️ GAP 2: Groq AI Client    (Returns mock data; needs live API key & client call)
+[ Frontend: retain dataset_id ]
             │
-            │ ⚠️ GAP 3: Analysis results not saved to PostgreSQL `analysis_results`
+            │ GET /api/v1/results/{dataset_id}
             ▼
-[ Backend: FastAPI /results/{id} ]  (Currently returns static hardcoded JSON)
+[ Backend: authenticated, ownership-checked analysis ]
             │
-            │ ⚠️ GAP 4: Frontend calls useAnalysis() without dataset_id; charts are placeholders
+            │ returns camelCase dashboard contract
             ▼
-[ Frontend Dashboard Displays ]
+[ Frontend: map nullable response fields ]
+            ├── kpis → KpiCards
+            ├── topCampaigns/bottomCampaigns → CampaignRanking
+            ├── performance → PerformanceChart
+            ├── trends → TrendCharts
+            ├── recommendations → AiRecommendations
+            └── segmentation/forecasting → guarded panels
 ```
+
+The confirmed break is on the frontend integration boundary: the app does not
+mount auth/upload pages, the upload ID is discarded, and the dashboard does
+not call or map the aggregate results response. No backend route or response
+model change is required to correct these defects.
 
 ---
 
-## 6. Roadmap & Immediate Action Plan for `analytics` Branch
+## 6. Frontend Contract-Alignment Plan
 
-As lead for the **Analytics & AI track (Vishal S Naik)**, here is the prioritized implementation checklist for this branch:
+The following is the smallest set of frontend changes required to consume the
+existing backend API without changing backend routes or response models.
+
+### Step 1: Make the existing pages reachable
+
+- Update `frontend/src/App.jsx` to select or route login, registration, upload,
+  and dashboard pages.
+- Protect upload and dashboard pages when no bearer token is present.
+- Connect the navbar logout action to token removal.
+- Preserve the `/api/v1` route prefix; do not add a second prefix to
+  `VITE_API_BASE_URL`.
+
+### Step 2: Complete authentication wiring
+
+- Connect `frontend/src/pages/Register.jsx` to `useAuth().register`; remove the
+  console-only submission.
+- Keep the login request body as `{ email, password }`.
+- Store `res.access_token` from `POST /auth/login` and send it as
+  `Authorization: Bearer <token>`.
+- Handle 401 responses explicitly and clear invalid tokens when the session
+  expires.
+
+### Step 3: Align CSV upload with the backend
+
+- Restrict `FileDropzone` to `.csv`; the backend rejects Excel extensions with
+  HTTP 400.
+- Continue sending one multipart part named exactly `file` to
+  `POST /api/v1/uploads/`.
+- Capture `response.dataset_id` in `Upload.jsx`.
+- Persist the active dataset ID in application state or a URL parameter so the
+  dashboard can request the corresponding results.
+- Parse object-valued 422 errors (`detail.message` and `detail.errors`) into
+  readable validation messages.
+
+### Step 4: Consume the aggregate results contract
+
+- Use `GET /api/v1/results/{dataset_id}` as the single dashboard request.
+- Do not call `/results/{dataset_id}/rankings` or
+  `/results/{dataset_id}/recommendations`; those routes are not implemented.
+- Map the response as follows:
+
+| Backend field | Frontend surface |
+|---|---|
+| `kpis` | `KpiCards` |
+| `topCampaigns`, `bottomCampaigns` | `CampaignRanking` |
+| `performance` | `PerformanceChart` |
+| `trends` | `TrendCharts` |
+| `recommendations` | `AiRecommendations` |
+| `segmentation` | guarded segmentation panel or future UI |
+| `forecasting` | guarded forecasting panel or future UI |
+
+- Update ranking rendering from `campaign.name` to `campaign.campaignName`.
+- Handle `null` revenue and ROAS as unavailable values rather than `$0` or
+  `0.0x`.
+- Use explicit null/undefined checks so a legitimate numeric zero remains zero.
+
+### Step 5: Add request-state and regression coverage
+
+- Show loading while `useAnalysis(datasetId)` is pending.
+- Show readable errors for 401, 403, 404, 422, and network failures.
+- Clear stale result data when the active dataset changes or a request fails.
+- Add frontend tests for request paths, token headers, upload response ID
+  retention, nullable fields, and backend error parsing.
+- Manually verify login → upload → result → dashboard against the running
+  FastAPI service.
+
+## 7. Existing Analytics / AI Roadmap
+
+As lead for the **Analytics & AI track (Vishal S Naik)**, the remaining
+analytics-focused implementation checklist is:
 
 ### Step 1: Real Groq AI Client Implementation
 - In `analytics/ai/groq_client.py`:
@@ -346,12 +429,12 @@ As lead for the **Analytics & AI track (Vishal S Naik)**, here is the prioritize
   ```
 
 ### Step 3: Backend Bridge Integration
-- In `backend/app/services/analysis_service.py`:
-  - Fetch campaign rows from the database for `dataset_id`.
-  - Convert rows into a Pandas DataFrame.
-  - Execute `run_marketing_analysis(df)`.
-  - Persist the calculated metrics into the `analysis_results` table in PostgreSQL.
-  - Return the real calculated metrics in `GET /api/v1/results/{dataset_id}`.
+- The current backend already performs the database lookup, analytics
+  calculation, persistence, ownership check, and contract adaptation in
+  `backend/app/services/analysis_service.py`.
+- Treat `backend/app/schemas/result.py` as the source of truth for future
+  frontend/backend changes. Do not add client-side assumptions for fields that
+  are not present in that schema.
 
 ### Step 4: Comprehensive Unit Tests
 - Replace placeholder stubs in `analytics/tests/`:
