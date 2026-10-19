@@ -1,21 +1,25 @@
 import React from 'react';
 
-const sampleKpis = [
-  { title: 'Total Spend', value: '₹1,25,000', change: '+8.2%' },
-  { title: 'Total Revenue', value: '₹3,75,000', change: '+12.5%' },
-  { title: 'Overall ROAS', value: '3.0x', change: '+5.4%' },
-  { title: 'Conversion Rate', value: '4.8%', change: '+1.2%' },
-  { title: 'Average CPA', value: '₹250', change: '-6.3%' },
-];
+const number = (value) => value == null || !Number.isFinite(Number(value))
+  ? '—'
+  : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(Number(value));
 
-export default function KpiCards() {
+export default function KpiCards({ kpis }) {
+  const items = [
+    { title: 'Total Spend', value: number(kpis?.totalSpend) },
+    { title: 'Total Revenue', value: number(kpis?.totalRevenue) },
+    { title: 'Overall ROAS', value: kpis?.overallRoas == null ? '—' : `${number(kpis.overallRoas)}x` },
+    { title: 'Conversion Rate', value: kpis?.avgConversionRate == null ? '—' : `${number(kpis.avgConversionRate)}%` },
+    { title: 'Average CPA', value: number(kpis?.avgCpa) },
+  ];
+
   return (
-    <section className="kpi-grid">
-      {sampleKpis.map((kpi) => (
-        <article className="kpi-card" key={kpi.title}>
-          <p className="kpi-title">{kpi.title}</p>
-          <h2 className="kpi-value">{kpi.value}</h2>
-          <span className="kpi-change">{kpi.change} vs previous period</span>
+    <section className="kpi-grid" aria-label="Dataset key performance indicators">
+      {items.map((item) => (
+        <article className="kpi-card" key={item.title}>
+          <p className="kpi-title">{item.title}</p>
+          <h2 className="kpi-value">{item.value}</h2>
+          <span className="kpi-change">Dataset results</span>
         </article>
       ))}
     </section>

@@ -1,96 +1,78 @@
 import React, { useState } from 'react';
 import Navbar from '../components/common/Navbar';
 import Sidebar from '../components/common/Sidebar';
+import uploadApi from '../api/uploadApi';
 
-export default function Upload() {
+export default function Upload({ user }) {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [uploadedDataset, setUploadedDataset] = useState(null);
 
   const handleFileChange = (event) => {
-    const selectedFile = event.target.files[0];
-
+    const selectedFile = event.target.files?.[0];
+    setUploadedDataset(null);
     if (!selectedFile) return;
-
-    const allowedExtensions = ['csv', 'xlsx', 'xls'];
-    const extension = selectedFile.name.split('.').pop().toLowerCase();
-
-    if (!allowedExtensions.includes(extension)) {
+    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
       setFile(null);
-      setError('Please select a CSV or Excel file.');
+      setError('The backend accepts CSV files only. Please choose a .csv file.');
+      event.target.value = '';
       return;
     }
-
     setFile(selectedFile);
     setError('');
   };
 
- return (
-  <div className="dashboard-page">
-    <Navbar />
+  const handleUpload = async () => {
+    if (!file || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await uploadApi.uploadFile(file);
+      setUploadedDataset(result);
+    } catch (err) {
+      setError(err.message || 'Upload failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    <div className="dashboard-layout">
-      <Sidebar />
-
-      <main className="dashboard-content">
-        <div className="upload-page">
-          <h1>Upload Marketing Data</h1>
-
-          <p className="upload-description">
-            Upload your campaign data to discover actionable marketing insights.
-          </p>
-
-          <div className="upload-card">
-            <div className="upload-icon">↑</div>
-
-            <h2>Choose your dataset</h2>
-
-            <p>Supported formats: CSV, XLSX and XLS</p>
-
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={handleFileChange}
-            />
-
-            {error && (
-              <p className="upload-error">{error}</p>
-            )}
-
-           {file && (
-  <div className="selected-file-card">
-    <div>
-      <strong>{file.name}</strong>
-      <p>{(file.size / 1024).toFixed(2)} KB</p>
-    </div>
-
-    <button
-      type="button"
-      className="remove-file-button"
-      onClick={() => {
-        setFile(null);
-        setError('');
-      }}
-    >
-      Remove
-    </button>
-  </div>
-)}
-
-<button
-  type="button"
-  className="upload-button"
-  disabled={!file}
-  onClick={() => {
-    alert('Backend upload integration is coming soon!');
-  }}
->
-  Upload Dataset
-</button>
-
+  return (
+    <div className="dashboard-page">
+      <Navbar user={user} />
+      <div className="dashboard-layout">
+        <Sidebar />
+        <main className="dashboard-content">
+          <div className="upload-page">
+            <h1>Upload Marketing Data</h1>
+            <p className="upload-description">Upload campaign data to calculate performance and recommendations.</p>
+            <div className="upload-card">
+              <div className="upload-icon" aria-hidden="true">↑</div>
+              <h2>Choose your dataset</h2>
+              <p>CSV files only, as supported by the upload API.</p>
+              <label className="visually-hidden" htmlFor="dataset-file">Choose CSV dataset</label>
+              <input id="dataset-file" type="file" accept=".csv,text/csv" onChange={handleFileChange} disabled={loading} />
+              {error && <p className="upload-error" role="alert">{error}</p>}
+              {file && (
+                <div className="selected-file-card">
+                  <div><strong>{file.name}</strong><p>{(file.size / 1024).toFixed(2)} KB</p></div>
+                  <button type="button" className="remove-file-button" disabled={loading} onClick={() => { setFile(null); setError(''); }}>Remove</button>
+                </div>
+              )}
+              <button type="button" className="upload-button" disabled={!file || loading} onClick={handleUpload}>
+                {loading ? 'Uploading and processing…' : 'Upload Dataset'}
+              </button>
+              {uploadedDataset && (
+                <div className="upload-success" role="status">
+                  <p><strong>{uploadedDataset.message || 'Upload confirmed.'}</strong></p>
+                  <p>{uploadedDataset.filename} · Status: {uploadedDataset.status}</p>
+                  <a className="primary-link-button" href={`/dashboard?dataset_id=${encodeURIComponent(uploadedDataset.dataset_id)}`}>View dataset dashboard</a>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
-  </div>
-);
+  );
 }

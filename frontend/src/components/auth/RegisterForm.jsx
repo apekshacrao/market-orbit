@@ -5,15 +5,15 @@ export default function RegisterForm({ onSubmit, loading, error }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit({ name, email, password });
+    await onSubmit({ name: name.trim(), email: email.trim(), password });
   };
 
   return (
     <form className="register-form" onSubmit={handleSubmit}>
       <h2>Create Account</h2>
-      {error && <div className="error-message">{error}</div>}
+      {error && <div className="error-message" role="alert">{error}</div>}
       <div className="form-group">
         <label htmlFor="name">Full Name</label>
         <input
@@ -22,6 +22,7 @@ export default function RegisterForm({ onSubmit, loading, error }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
+          autoComplete="name"
         />
       </div>
       <div className="form-group">
@@ -32,6 +33,7 @@ export default function RegisterForm({ onSubmit, loading, error }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          autoComplete="email"
         />
       </div>
       <div className="form-group">
@@ -42,11 +44,13 @@ export default function RegisterForm({ onSubmit, loading, error }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          autoComplete="new-password"
         />
       </div>
       <button type="submit" disabled={loading}>
         {loading ? 'Creating Account...' : 'Register'}
       </button>
+      <p className="auth-switch">Already have an account? <a href="/login">Sign in</a></p>
     </form>
   );
 }

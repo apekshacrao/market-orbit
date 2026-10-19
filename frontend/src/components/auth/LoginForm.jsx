@@ -4,15 +4,15 @@ export default function LoginForm({ onSubmit, loading, error }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit({ email, password });
+    await onSubmit({ email: email.trim(), password });
   };
 
   return (
     <form className="login-form" onSubmit={handleSubmit}>
       <h2>Sign In</h2>
-      {error && <div className="error-message">{error}</div>}
+      {error && <div id="login-error" className="error-message" role="alert">{error}</div>}
       <div className="form-group">
         <label htmlFor="email">Email</label>
         <input
@@ -21,6 +21,8 @@ export default function LoginForm({ onSubmit, loading, error }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          autoComplete="email"
+          aria-describedby={error ? 'login-error' : undefined}
         />
       </div>
       <div className="form-group">
@@ -31,6 +33,7 @@ export default function LoginForm({ onSubmit, loading, error }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          autoComplete="current-password"
         />
       </div>
       <button type="submit" disabled={loading}>

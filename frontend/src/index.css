@@ -127,7 +127,8 @@ a {
   box-shadow: var(--shadow-glow);
 }
 
-.login-form h2 {
+.login-form h2,
+.register-form h2 {
   margin: 0 0 28px;
   color: var(--color-text);
   font-size: 28px;
@@ -167,6 +168,7 @@ a {
 }
 
 .login-form button,
+.register-form button,
 .upload-button {
   width: 100%;
   padding: 13px 16px;
@@ -179,6 +181,7 @@ a {
 }
 
 .login-form button:hover,
+.register-form button:hover,
 .upload-button:hover:not(:disabled) {
   border-color: #8b5bb1;
   background: linear-gradient(135deg, var(--color-primary-hover), #1d4f80);
@@ -186,6 +189,7 @@ a {
 }
 
 .login-form button:disabled,
+.register-form button:disabled,
 .upload-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -212,6 +216,48 @@ a {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-danger);
+}
+
+.success-message p,
+.upload-success p {
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.upload-success {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid rgba(94, 211, 154, 0.45);
+  border-radius: var(--radius-sm);
+  background: var(--color-success-bg);
+  text-align: left;
+}
+
+.upload-success p { margin: 0 0 10px; }
+
+.primary-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 11px 16px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent-light));
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.primary-link-button:hover { background: linear-gradient(135deg, var(--color-primary-hover), #1d4f80); }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .auth-switch {
@@ -385,6 +431,61 @@ a {
 .upload-description {
   margin: 0;
   color: var(--color-text-muted);
+}
+
+.dashboard-heading-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.dataset-picker {
+  display: grid;
+  gap: 7px;
+  min-width: min(320px, 100%);
+}
+
+.dataset-picker label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dataset-picker select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.data-source-note {
+  margin-top: 24px !important;
+  color: var(--color-text-subtle) !important;
+  font-size: 13px;
+}
+
+.empty-panel {
+  max-width: 680px;
+  margin-top: 32px;
+  padding: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.empty-panel h2 { margin-top: 0; }
+.empty-panel p,
+.empty-state { color: var(--color-text-muted); line-height: 1.6; }
+.empty-state { margin: 12px 0; }
+
+.recommendation-impact {
+  display: inline-block;
+  margin: 8px 0 0 8px;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
 .kpi-grid {
@@ -727,6 +828,13 @@ a {
   .dashboard-content {
     padding: 28px 24px;
   }
+
+  .dashboard-heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dataset-picker { min-width: 0; }
 
   .campaign-ranking-container {
     grid-template-columns: 1fr;

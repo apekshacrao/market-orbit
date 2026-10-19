@@ -1,6 +1,11 @@
 import React from 'react';
 
-export default function Navbar() {
+export default function Navbar({ user }) {
+  const displayName = user?.name || user?.full_name || user?.email || 'Account';
+  const logout = () => {
+    localStorage.removeItem('token');
+    window.location.assign('/login');
+  };
   return (
     <header className="navbar">
       <div className="navbar-brand">
@@ -9,14 +14,14 @@ export default function Navbar() {
       </div>
 
       <div className="navbar-user">
-        <div className="user-avatar">U</div>
+        <div className="user-avatar" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</div>
 
         <div className="user-info">
-          <strong>User</strong>
-          <span>Marketing Analyst</span>
+          <strong>{displayName}</strong>
+          <span>{user?.email || 'Marketing Analyst'}</span>
         </div>
 
-        <button className="logout-button">
+        <button className="logout-button" onClick={logout} type="button">
           Logout
         </button>
       </div>

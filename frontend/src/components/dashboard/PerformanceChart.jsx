@@ -10,24 +10,14 @@ import {
   Legend
 } from 'recharts';
 
-const sampleData = [
-  { date: 'Mon', spend: 1200, revenue: 3200 },
-  { date: 'Tue', spend: 1500, revenue: 4100 },
-  { date: 'Wed', spend: 1100, revenue: 2900 },
-  { date: 'Thu', spend: 1800, revenue: 5200 },
-  { date: 'Fri', spend: 1600, revenue: 4700 },
-  { date: 'Sat', spend: 2100, revenue: 6100 },
-  { date: 'Sun', spend: 1700, revenue: 5400 }
-];
-
 export default function PerformanceChart({ data }) {
-  const chartData = data?.length ? data : sampleData;
+  const chartData = data || [];
 
   return (
     <div className="performance-chart-wrapper">
-      <h3>Campaign Performance Overview</h3>
+      <h3>Daily Performance</h3>
 
-      <div className="performance-chart">
+      {chartData.length ? <div className="performance-chart">
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={chartData}>
             <CartesianGrid stroke="#36315B" strokeDasharray="3 3" />
@@ -71,7 +61,7 @@ export default function PerformanceChart({ data }) {
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </div> : <p className="empty-state">No dated performance data is available for this dataset.</p>}
     </div>
   );
 }

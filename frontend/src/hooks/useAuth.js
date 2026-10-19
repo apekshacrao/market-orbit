@@ -12,6 +12,7 @@ export function useAuth() {
     try {
       const res = await authApi.login(credentials);
       localStorage.setItem('token', res.access_token);
+      localStorage.setItem('user', JSON.stringify(res.user));
       setUser(res.user);
       return res;
     } catch (err) {
@@ -20,6 +21,12 @@ export function useAuth() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const getCurrentUser = useCallback(async () => {
+    const current = await authApi.getCurrentUser();
+    setUser(current);
+    return current;
   }, []);
 
   const register = useCallback(async (userData) => {
@@ -38,8 +45,9 @@ export function useAuth() {
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setUser(null);
   }, []);
 
-  return { user, loading, error, login, register, logout };
+  return { user, loading, error, login, register, logout, getCurrentUser };
 }

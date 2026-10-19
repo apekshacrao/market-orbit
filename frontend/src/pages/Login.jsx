@@ -4,6 +4,14 @@ import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
   const { login, loading, error } = useAuth();
+  const handleLogin = async (credentials) => {
+    try {
+      await login(credentials);
+      window.location.assign('/dashboard');
+    } catch {
+      // The hook exposes the API error to the form.
+    }
+  };
 
  return (
   <div className="page-container auth-page">
@@ -13,7 +21,7 @@ export default function Login() {
     </div>
 
     <div className="auth-form-container">
-      <LoginForm onSubmit={login} loading={loading} error={error} />
+      <LoginForm onSubmit={handleLogin} loading={loading} error={error} />
     </div>
   </div>
 );

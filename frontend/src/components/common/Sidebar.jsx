@@ -7,6 +7,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       <nav className="sidebar-nav">
         <a
+          aria-current={path === '/dashboard' ? 'page' : undefined}
           href="/dashboard"
           className={`sidebar-link ${path === '/dashboard' ? 'active' : ''}`}
         >
@@ -14,6 +15,7 @@ export default function Sidebar() {
         </a>
 
         <a
+          aria-current={path === '/upload' ? 'page' : undefined}
           href="/upload"
           className={`sidebar-link ${path === '/upload' ? 'active' : ''}`}
         >
