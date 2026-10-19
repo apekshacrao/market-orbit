@@ -33,3 +33,5 @@ class AnalysisResultResponse(BaseModel):
     bottomCampaigns: List[CampaignPerformanceResponse]
     trends: List[TrendResponse]
     recommendations: List[Dict[str, Any]]
+    segmentation: Optional[Dict[str, Any]] = None
+    forecasting: Optional[Dict[str, Any]] = None
