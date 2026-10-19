@@ -1,13 +1,16 @@
 export function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+  if (amount == null || !Number.isFinite(Number(amount))) return 'Unavailable';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(amount));
 }
 
 export function formatPercentage(value) {
-  return `${((value || 0) * 100).toFixed(2)}%`;
+  if (value == null || !Number.isFinite(Number(value))) return 'Unavailable';
+  return `${(Number(value) * 100).toFixed(2)}%`;
 }
 
 export function formatNumber(num) {
-  return new Intl.NumberFormat('en-US').format(num || 0);
+  if (num == null || !Number.isFinite(Number(num))) return 'Unavailable';
+  return new Intl.NumberFormat('en-US').format(Number(num));
 }
 
 export function formatDate(dateString) {

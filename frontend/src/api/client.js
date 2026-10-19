@@ -22,12 +22,28 @@ export async function apiClient(endpoint, options = {}) {
       localStorage.removeItem('user');
       if (window.location.pathname !== '/login') window.location.assign('/login');
     }
-    const detail = typeof errorData.detail === 'string'
-      ? errorData.detail
-      : Array.isArray(errorData.detail)
-        ? errorData.detail.map((item) => item.msg || item.message).filter(Boolean).join('; ')
-        : errorData.detail?.message || `Request failed (${response.status})`;
-    throw new Error(detail);
+    const detail = errorData.detail;
+    const validationMessages = Array.isArray(detail?.errors)
+      ? detail.errors.map((item) => {
+        if (typeof item === 'string') return item;
+        const location = [item.row != null ? `Row ${item.row}` : null, item.column].filter(Boolean).join(', ');
+        return [location, item.message || item.msg].filter(Boolean).join(': ');
+      }).filter(Boolean)
+      : [];
+    const message = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((item) => item.msg || item.message).filter(Boolean).join('; ')
+        : [detail?.message, ...validationMessages].filter(Boolean).join(': ');
+    const statusMessage = {
+      401: 'Your session has expired. Please sign in again.',
+      403: 'You do not have access to this dataset.',
+      404: 'The requested dataset was not found.',
+      422: 'The uploaded CSV could not be validated.',
+    }[response.status];
+    const error = new Error(message || statusMessage || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
 
   if (response.status === 204) return null;

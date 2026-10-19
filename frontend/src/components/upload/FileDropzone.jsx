@@ -2,7 +2,18 @@ import React, { useState, useRef } from 'react';
 
 export default function FileDropzone({ onFileSelected, disabled }) {
   const [isDragging, setIsDragging] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+
+  const selectFile = (file) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setError('The backend accepts CSV files only. Please choose a .csv file.');
+      return;
+    }
+    setError('');
+    onFileSelected(file);
+  };
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -19,7 +30,7 @@ export default function FileDropzone({ onFileSelected, disabled }) {
     if (disabled) return;
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      onFileSelected(files[0]);
+      selectFile(files[0]);
     }
   };
 
@@ -34,12 +45,17 @@ export default function FileDropzone({ onFileSelected, disabled }) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,text/csv"
         style={{ display: 'none' }}
-        onChange={(e) => e.target.files?.[0] && onFileSelected(e.target.files[0])}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(e) => {
+          selectFile(e.target.files?.[0]);
+          e.target.value = '';
+        }}
       />
-      <p>Drag and drop your marketing campaign CSV/Excel file here, or click to browse</p>
-      <span>Supported formats: CSV, XLSX (Max 50MB)</span>
+      <p>Drag and drop your marketing campaign CSV file here, or click to browse</p>
+      <span>Supported format: CSV</span>
+      {error && <p className="upload-error" role="alert">{error}</p>}
     </div>
   );
 }

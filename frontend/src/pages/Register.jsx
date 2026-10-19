@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import RegisterForm from '../components/auth/RegisterForm';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Register() {
   const { register, loading, error } = useAuth();
-  const [success, setSuccess] = useState(false);
   const handleRegister = async (userData) => {
     try {
       await register(userData);
-      setSuccess(true);
+      window.location.assign('/login?registered=1');
     } catch {
       // The hook exposes the API error to the form.
     }
@@ -21,15 +20,7 @@ export default function Register() {
         <p>Turn your marketing data into clear, actionable insights.</p>
       </div>
       <div className="auth-form-container">
-        {success ? (
-          <div role="status" className="success-message">
-            <h2>Account created</h2>
-            <p>Your account is ready. Sign in to continue.</p>
-            <a className="primary-link-button" href="/login">Go to sign in</a>
-          </div>
-        ) : (
-          <RegisterForm onSubmit={handleRegister} loading={loading} error={error} />
-        )}
+        <RegisterForm onSubmit={handleRegister} loading={loading} error={error} />
       </div>
     </div>
   );

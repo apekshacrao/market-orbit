@@ -30,6 +30,7 @@ export default function Upload({ user }) {
     try {
       const result = await uploadApi.uploadFile(file);
       setUploadedDataset(result);
+      if (result.dataset_id) localStorage.setItem('dataset_id', result.dataset_id);
     } catch (err) {
       setError(err.message || 'Upload failed. Please try again.');
     } finally {

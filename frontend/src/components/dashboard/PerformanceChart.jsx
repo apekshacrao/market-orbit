@@ -10,12 +10,12 @@ import {
   Legend
 } from 'recharts';
 
-export default function PerformanceChart({ data }) {
+export default function PerformanceChart({ data = [] }) {
   const chartData = data || [];
 
   return (
     <div className="performance-chart-wrapper">
-      <h3>Daily Performance</h3>
+      <h3>Campaign Performance</h3>
 
       {chartData.length ? <div className="performance-chart">
         <ResponsiveContainer width="100%" height={320}>
@@ -23,7 +23,7 @@ export default function PerformanceChart({ data }) {
             <CartesianGrid stroke="#36315B" strokeDasharray="3 3" />
 
             <XAxis
-              dataKey="date"
+              dataKey="campaignName"
               stroke="#B8B2D0"
             />
 
@@ -61,7 +61,7 @@ export default function PerformanceChart({ data }) {
             />
           </LineChart>
         </ResponsiveContainer>
-      </div> : <p className="empty-state">No dated performance data is available for this dataset.</p>}
+      </div> : <p className="empty-state">No campaign performance data is available for this dataset.</p>}
     </div>
   );
 }

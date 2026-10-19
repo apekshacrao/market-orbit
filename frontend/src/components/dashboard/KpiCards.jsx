@@ -1,15 +1,15 @@
 import React from 'react';
 
 const number = (value) => value == null || !Number.isFinite(Number(value))
-  ? '—'
+  ? 'Unavailable'
   : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(Number(value));
 
 export default function KpiCards({ kpis }) {
   const items = [
     { title: 'Total Spend', value: number(kpis?.totalSpend) },
     { title: 'Total Revenue', value: number(kpis?.totalRevenue) },
-    { title: 'Overall ROAS', value: kpis?.overallRoas == null ? '—' : `${number(kpis.overallRoas)}x` },
-    { title: 'Conversion Rate', value: kpis?.avgConversionRate == null ? '—' : `${number(kpis.avgConversionRate)}%` },
+    { title: 'Overall ROAS', value: kpis?.overallRoas == null ? 'Unavailable' : `${number(kpis.overallRoas)}x` },
+    { title: 'Conversion Rate', value: kpis?.avgConversionRate == null ? 'Unavailable' : `${number(kpis.avgConversionRate)}%` },
     { title: 'Average CPA', value: number(kpis?.avgCpa) },
   ];
 

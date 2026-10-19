@@ -13,7 +13,7 @@ import uploadApi from '../api/uploadApi';
 export default function Dashboard({ user }) {
   const queryDatasetId = new URLSearchParams(window.location.search).get('dataset_id');
   const [datasets, setDatasets] = useState([]);
-  const [datasetId, setDatasetId] = useState(queryDatasetId || '');
+  const [datasetId, setDatasetId] = useState(queryDatasetId || localStorage.getItem('dataset_id') || '');
   const [datasetsLoading, setDatasetsLoading] = useState(true);
   const [datasetsError, setDatasetsError] = useState(null);
   const { data, loading, error } = useAnalysis(datasetId);
@@ -24,7 +24,9 @@ export default function Dashboard({ user }) {
       .then((items) => {
         if (!active) return;
         setDatasets(items);
-        if (!datasetId && items.length) setDatasetId(items[0].id);
+        const requestedId = queryDatasetId || localStorage.getItem('dataset_id');
+        const validRequestedId = requestedId && items.some((dataset) => dataset.id === requestedId);
+        if (!validRequestedId && !queryDatasetId && items.length) setDatasetId(items[0].id);
       })
       .catch((err) => { if (active) setDatasetsError(err.message); })
       .finally(() => { if (active) setDatasetsLoading(false); });
@@ -34,6 +36,8 @@ export default function Dashboard({ user }) {
   const chooseDataset = (event) => {
     const id = event.target.value;
     setDatasetId(id);
+    if (id) localStorage.setItem('dataset_id', id);
+    else localStorage.removeItem('dataset_id');
     const url = new URL(window.location.href);
     if (id) url.searchParams.set('dataset_id', id);
     else url.searchParams.delete('dataset_id');
@@ -79,9 +83,11 @@ export default function Dashboard({ user }) {
               <p className="data-source-note">Showing results for {selectedDataset?.filename || 'selected dataset'}.</p>
               <KpiCards kpis={data.kpis} />
               <CampaignRanking topCampaigns={data.topCampaigns || []} bottomCampaigns={data.bottomCampaigns || []} />
-              <PerformanceChart data={data.trends || []} />
-              <TrendCharts performance={data.performance || []} />
+              <PerformanceChart data={data.performance || []} />
+              <TrendCharts data={data.trends || []} />
               <AiRecommendations recommendations={data.recommendations || []} />
+              {data.segmentation && <section className="empty-panel"><h2>Segmentation</h2><pre>{JSON.stringify(data.segmentation, null, 2)}</pre></section>}
+              {data.forecasting && <section className="empty-panel"><h2>Forecasting</h2><pre>{JSON.stringify(data.forecasting, null, 2)}</pre></section>}
             </>
           )}
         </main>

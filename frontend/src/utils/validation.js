@@ -7,7 +7,7 @@ export function isValidPassword(password) {
   return typeof password === 'string' && password.length >= 8;
 }
 
-export function validateFileType(file, allowedExtensions = ['.csv', '.xlsx', '.xls']) {
+export function validateFileType(file, allowedExtensions = ['.csv']) {
   if (!file) return false;
   return allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
 }

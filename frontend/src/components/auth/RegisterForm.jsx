@@ -7,7 +7,7 @@ export default function RegisterForm({ onSubmit, loading, error }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await onSubmit({ name: name.trim(), email: email.trim(), password });
+    await onSubmit({ ...(name.trim() ? { name: name.trim() } : {}), email: email.trim(), password });
   };
 
   return (
@@ -21,7 +21,6 @@ export default function RegisterForm({ onSubmit, loading, error }) {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          required
           autoComplete="name"
         />
       </div>

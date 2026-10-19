@@ -4,6 +4,8 @@ export default function Navbar({ user }) {
   const displayName = user?.name || user?.full_name || user?.email || 'Account';
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('dataset_id');
     window.location.assign('/login');
   };
   return (
