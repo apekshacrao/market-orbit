@@ -7,6 +7,7 @@ export const uploadApi = {
     return apiClient('/uploads/', { method: 'POST', body: formData });
   },
   getUploadStatus: (datasetId) => apiClient(`/uploads/${encodeURIComponent(datasetId)}/status`),
+  getDatasetCampaigns: (datasetId) => apiClient(`/uploads/${encodeURIComponent(datasetId)}/campaigns`),
   getDatasets: () => apiClient('/uploads/'),
 };
 

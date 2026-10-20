@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import resultsApi from '../api/resultsApi';
 
-export function useAnalysis(datasetId) {
+export function useAnalysis(datasetId, refreshKey = 0) {
   const [request, setRequest] = useState({ datasetId: null, data: null, loading: false, error: null });
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export function useAnalysis(datasetId) {
         if (active) setRequest({ datasetId, data: null, loading: false, error: err.message });
       });
     return () => { active = false; };
-  }, [datasetId]);
+  }, [datasetId, refreshKey]);
 
   if (request.datasetId !== datasetId) {
     return { data: null, loading: Boolean(datasetId), error: null };

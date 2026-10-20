@@ -8,22 +8,38 @@ import { useDatasetWorkspace } from '../hooks/useDatasetWorkspace';
 import { demoTrendData } from '../data/demoTrendData';
 import uploadApi from '../api/uploadApi';
 import { useEffect } from 'react';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 function validTrend(rows) {
   if (!Array.isArray(rows)) return [];
   return rows.filter((row) => {
-    const date = typeof row?.date === 'string' ? new Date(`${row.date}T00:00:00`) : new Date(row?.date);
-    return row?.date && !Number.isNaN(date.getTime()) && Number.isFinite(Number(row.spend)) && Number.isFinite(Number(row.revenue));
+    if (typeof row?.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return false;
+    const date = new Date(`${row.date}T00:00:00`);
+    return date.toISOString().slice(0, 10) === row.date
+      && row.spend != null && Number.isFinite(Number(row.spend))
+      && row.revenue != null && Number.isFinite(Number(row.revenue));
   }).map((row) => ({ ...row, date: new Date(`${row.date}T00:00:00`).toISOString().slice(0, 10), spend: Number(row.spend), revenue: Number(row.revenue) })).sort((a, b) => a.date.localeCompare(b.date));
 }
 function TrendLine({ rows }) {
-  const width = 760, height = 245, pad = 28;
-  const max = Math.max(1, ...rows.flatMap((r) => [r.spend, r.revenue]));
-  const points = (key) => rows.map((r, i) => `${pad + (i * (width - pad * 2)) / Math.max(1, rows.length - 1)},${height - pad - (r[key] / max) * (height - pad * 2)}`).join(' ');
-  return <div className="trend-svg-wrap"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Spend and revenue performance trend"><g className="chart-grid-lines">{[0,1,2,3].map((n) => <line key={n} x1={pad} x2={width-pad} y1={pad+n*(height-pad*2)/3} y2={pad+n*(height-pad*2)/3} />)}</g><polyline className="trend-line spend-line" points={points('spend')} /><polyline className="trend-line revenue-line" points={points('revenue')} />{rows.map((r,i) => { const x=pad+i*(width-pad*2)/Math.max(1,rows.length-1); return <g key={`${r.date}-${i}`}><circle className="trend-point spend-point" cx={x} cy={height-pad-(r.spend/max)*(height-pad*2)} r="3"><title>{r.date}: spend {r.spend}</title></circle><circle className="trend-point revenue-point" cx={x} cy={height-pad-(r.revenue/max)*(height-pad*2)} r="3"><title>{r.date}: revenue {r.revenue}</title></circle></g>; })}</svg><div className="trend-date-labels">{rows.map((r) => <span key={r.date}>{new Date(`${r.date}T00:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span>)}</div></div>;
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('reduce-motion');
+  const hasConversions = rows.some((row) => row.conversions != null && Number.isFinite(Number(row.conversions)));
+  const compact = (value) => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  return <div className="trend-chart-area"><ResponsiveContainer width="100%" height={310}>
+    <LineChart data={rows} margin={{ top: 8, right: hasConversions ? 12 : 20, bottom: 4, left: 8 }}>
+      <CartesianGrid stroke="#353C30" strokeDasharray="3 4" vertical={false}/>
+      <XAxis dataKey="date" stroke="#AAA99A" tick={{ fontSize: 11 }} tickFormatter={(value) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}/>
+      <YAxis yAxisId="metrics" stroke="#AAA99A" tick={{ fontSize: 11 }} tickFormatter={compact} width={48}/>
+      {hasConversions && <YAxis yAxisId="conversions" orientation="right" stroke="#AAA99A" tick={{ fontSize: 11 }} width={42}/>}
+      <Tooltip contentStyle={{ backgroundColor: '#171B15', border: '1px solid #353C30', borderRadius: '8px', color: '#E7E3D6' }} labelFormatter={(value) => new Date(`${value}T00:00:00`).toLocaleDateString()} formatter={(value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}/>
+      <Legend/>
+      <Line yAxisId="metrics" type="monotone" dataKey="spend" name="Spend" stroke="#78966A" strokeWidth={3} dot={false} isAnimationActive={!reducedMotion} animationDuration={650}/>
+      <Line yAxisId="metrics" type="monotone" dataKey="revenue" name="Revenue" stroke="#C5A15B" strokeWidth={3} dot={false} isAnimationActive={!reducedMotion} animationDuration={650}/>
+      {hasConversions && <Line yAxisId="conversions" type="monotone" dataKey="conversions" name="Conversions" stroke="#8BB58A" strokeWidth={2} dot={false} isAnimationActive={!reducedMotion} animationDuration={650}/>}
+    </LineChart>
+  </ResponsiveContainer></div>;
 }
 function MetricBars({ title, note, rows, field, format = (v) => Number(v).toLocaleString(), empty, color = 'green' }) {
-  const usable = (rows || []).filter((r) => Number.isFinite(Number(r[field])));
+  const usable = (rows || []).filter((r) => r[field] != null && Number.isFinite(Number(r[field])));
   const max = Math.max(1, ...usable.map((r) => Number(r[field])));
   return <section className="panel metric-chart"><div className="panel-heading"><div><p className="eyebrow">ANALYSIS</p><h2>{title}</h2><p className="panel-subtitle">{note}</p></div></div>{!usable.length ? <p className="panel-empty">{empty}</p> : <div className="metric-bars">{usable.slice(0,10).map((r,i) => <div className="metric-bar-row" key={`${r.label}-${i}`}><span title={r.label}>{r.label}</span><span className="metric-bar-track"><i className={color} style={{width:`${Math.max(Number(r[field]) > 0 ? 1 : 0, Number(r[field])/max*100)}%`}} /></span><b>{format(r[field])}</b></div>)}</div>}</section>;
 }
@@ -41,11 +57,14 @@ export default function Graphs({ user }) {
       <>
         <PerformanceChart data={data.performance || []} />
         <div className="additional-chart-grid">
+          <MetricBars title="ROAS by campaign" note="Campaign return on ad spend reported by the analysis." rows={(data.performance || []).map((item) => ({ ...item, label: item.campaignName || 'Unnamed campaign' }))} field="roas" format={(value) => `${Number(value).toFixed(2)}×`} empty="Campaign ROAS is unavailable for this dataset." color="gold" />
           <MetricBars title="Channel performance · ROAS" note="Revenue divided by spend when both values are available." rows={channels} field="roas" format={(value) => `${Number(value).toFixed(2)}×`} empty="Channel spend and revenue are unavailable for this dataset." color="gold" />
           <MetricBars title="Conversions by channel" note="Recorded conversion counts from uploaded campaign rows." rows={channels} field="conversions" format={(value) => Number(value).toLocaleString()} empty="The dataset contains no channel conversion counts." />
           <MetricBars title="Spend distribution by channel" note="Actual spend totals from campaign records." rows={channels} field="spend" format={(value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })} empty="No spend-by-channel records are available." color="gold" />
         </div>
         {campaignError && <p className="inline-note">Channel charts unavailable: {campaignError}</p>}
+        {data.segmentation && <section className="panel supplemental-analysis"><h2>Segmentation</h2><pre>{JSON.stringify(data.segmentation, null, 2)}</pre></section>}
+        {data.forecasting && <section className="panel supplemental-analysis"><h2>Forecasting</h2><pre>{JSON.stringify(data.forecasting, null, 2)}</pre></section>}
       </>
     )}
   </WorkspacePage>;

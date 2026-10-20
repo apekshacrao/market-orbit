@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Navbar from '../components/common/Navbar';
 import Sidebar from '../components/common/Sidebar';
 import uploadApi from '../api/uploadApi';
+import FileDropzone from '../components/upload/FileDropzone';
 
 export default function Upload({ user }) {
   const [file, setFile] = useState(null);
@@ -9,16 +10,8 @@ export default function Upload({ user }) {
   const [loading, setLoading] = useState(false);
   const [uploadedDataset, setUploadedDataset] = useState(null);
 
-  const handleFileChange = (event) => {
-    const selectedFile = event.target.files?.[0];
+  const selectFile = (selectedFile) => {
     setUploadedDataset(null);
-    if (!selectedFile) return;
-    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-      setFile(null);
-      setError('The backend accepts CSV files only. Please choose a .csv file.');
-      event.target.value = '';
-      return;
-    }
     setFile(selectedFile);
     setError('');
   };
@@ -42,17 +35,16 @@ export default function Upload({ user }) {
     <div className="dashboard-page">
       <Navbar user={user} />
       <div className="dashboard-layout">
-        <Sidebar />
+        <Sidebar user={user} />
         <main className="dashboard-content">
           <div className="upload-page">
-            <h1>Upload Marketing Data</h1>
+            <h1>Upload Dataset</h1>
             <p className="upload-description">Upload campaign data to calculate performance and recommendations.</p>
             <div className="upload-card">
               <div className="upload-icon" aria-hidden="true">↑</div>
               <h2>Choose your dataset</h2>
               <p>CSV files only, as supported by the upload API.</p>
-              <label className="visually-hidden" htmlFor="dataset-file">Choose CSV dataset</label>
-              <input id="dataset-file" type="file" accept=".csv,text/csv" onChange={handleFileChange} disabled={loading} />
+              <FileDropzone onFileSelected={selectFile} disabled={loading} />
               {error && <p className="upload-error" role="alert">{error}</p>}
               {file && (
                 <div className="selected-file-card">

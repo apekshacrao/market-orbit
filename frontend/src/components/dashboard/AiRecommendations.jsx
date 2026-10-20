@@ -12,7 +12,7 @@ export default function AiRecommendations({ recommendations = [] }) {
               <div className="recommendation-number">{String(index + 1).padStart(2, '0')}</div>
               <div className="recommendation-content">
                 <h4>{rec.title || 'Recommendation'}</h4>
-                <p>{rec.description || rec.reason || 'No additional detail provided.'}</p>
+                <p>{rec.description || rec.reason || rec.rationale || 'No additional detail provided.'}</p>
                 {rec.action && <span className="action-tag">Action: {rec.action}</span>}
                 {rec.impact && <span className="recommendation-impact">Impact: {rec.impact}</span>}
               </div>
