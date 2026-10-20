@@ -5,7 +5,7 @@ function RankingList({ title, campaigns, variant }) {
     <section className="ranking-column">
       <h3>{title}</h3>
       {campaigns.length ? (
-        <ul>{campaigns.map((campaign, index) => (
+        <ul>{campaigns.slice(0, 4).map((campaign, index) => (
           <li key={`${campaign.campaignName}-${index}`} className={`ranking-item ${variant}`}>
             <span>{campaign.campaignName}</span>
             <span>{campaign.roas == null ? 'ROAS unavailable' : `ROAS: ${Number(campaign.roas).toFixed(2)}x`}</span>

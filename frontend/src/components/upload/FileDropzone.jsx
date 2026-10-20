@@ -37,6 +37,15 @@ export default function FileDropzone({ onFileSelected, disabled }) {
   return (
     <div
       className={`file-dropzone ${isDragging ? 'dragging' : ''}`}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+      onKeyDown={(event) => {
+        if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          fileInputRef.current?.click();
+        }
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

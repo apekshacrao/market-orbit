@@ -1,13 +1,8 @@
 import React from 'react';
+import { logout } from '../../utils/session';
 
 export default function Navbar({ user }) {
   const displayName = user?.name || user?.full_name || user?.email || 'Account';
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('dataset_id');
-    window.location.assign('/login');
-  };
   return (
     <header className="navbar">
       <div className="navbar-brand">

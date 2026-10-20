@@ -9,15 +9,15 @@ export default function TrendCharts({ data = [] }) {
         <div className="trend-chart">
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data}>
-              <CartesianGrid stroke="#36315B" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#B8B2D0" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="metrics" stroke="#B8B2D0" />
-              <YAxis yAxisId="conversions" orientation="right" stroke="#B8B2D0" />
-              <Tooltip contentStyle={{ backgroundColor: '#080B38', border: '1px solid #512777', borderRadius: '8px', color: '#F5F3FA' }} />
+              <CartesianGrid stroke="#353C30" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="#AAA99A" tick={{ fontSize: 12 }} />
+              <YAxis yAxisId="metrics" stroke="#AAA99A" />
+              <YAxis yAxisId="conversions" orientation="right" stroke="#AAA99A" />
+              <Tooltip contentStyle={{ backgroundColor: '#171B15', border: '1px solid #353C30', borderRadius: '8px', color: '#E7E3D6' }} />
               <Legend />
-              <Line yAxisId="metrics" type="monotone" dataKey="spend" name="Spend" stroke="#9B72CF" strokeWidth={3} dot={false} />
-              <Line yAxisId="metrics" type="monotone" dataKey="revenue" name="Revenue" stroke="#52B7D8" strokeWidth={3} dot={false} connectNulls={false} />
-              <Line yAxisId="conversions" type="monotone" dataKey="conversions" name="Conversions" stroke="#5ed39a" strokeWidth={2} dot={false} />
+              <Line yAxisId="metrics" type="monotone" dataKey="spend" name="Spend" stroke="#78966A" strokeWidth={3} dot={false} />
+              <Line yAxisId="metrics" type="monotone" dataKey="revenue" name="Revenue" stroke="#C5A15B" strokeWidth={3} dot={false} connectNulls={false} />
+              <Line yAxisId="conversions" type="monotone" dataKey="conversions" name="Conversions" stroke="#8BB58A" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

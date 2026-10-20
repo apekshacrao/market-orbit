@@ -9,13 +9,13 @@ export default function Settings({ user }) {
     document.documentElement.classList.toggle('reduce-motion', reduced);
     localStorage.setItem(MOTION_KEY, String(reduced));
   }, [reduced]);
-  const name = user?.name || '';
+  const name = user?.name || user?.full_name || '';
   const email = user?.email || '';
   const initials = (name || email || 'MO').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 
   return <WorkspacePage user={user}>
     <div className="page-heading settings-heading">
-      <div><p className="eyebrow">WORKSPACE PREFERENCES</p><h1>Settings</h1><p>Manage your profile and application preferences.</p></div>
+      <div><p className="eyebrow">WORKSPACE PREFERENCES</p><h1>Settings</h1><p>Manage your profile, preferences, and account.</p></div>
     </div>
     <div className="settings-layout">
       <section className="settings-section" aria-labelledby="settings-profile">
@@ -32,7 +32,7 @@ export default function Settings({ user }) {
 
       <section className="settings-section" aria-labelledby="settings-preferences">
         <div className="settings-section-heading"><div><h2 id="settings-preferences">Preferences</h2><p>Adjust how the workspace behaves in this browser.</p></div></div>
-        <div className="preference-row theme-preview"><span className="theme-chip" aria-hidden="true"/><div><strong>Dark forest and antique gold</strong><small>Current application appearance</small></div></div>
+        <div className="preference-row theme-preview"><div><strong>Current dark appearance</strong><small>The existing application palette is active.</small></div></div>
         <label className="setting-toggle"><span><strong>Reduce motion</strong><small>Limit interface animations and transitions.</small></span><input type="checkbox" checked={reduced} onChange={(event) => setReduced(event.target.checked)} aria-label="Reduce motion"/><i/></label>
         <p className="settings-note">The reduced-motion preference is saved in this browser.</p>
       </section>
