@@ -1,21 +1,31 @@
-import { useState } from 'react';
+import React from 'react';
 
-export default function Navbar({ user, datasetName, onLogout }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const label = user?.name || user?.email || 'Your workspace';
-  const initials = label.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'MO';
-
+export default function Navbar({ user }) {
+  const displayName = user?.name || user?.full_name || user?.email || 'Account';
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('dataset_id');
+    window.location.assign('/login');
+  };
   return (
-    <header className="topbar">
-      <a className="brand-lockup topbar-brand" href="/dashboard" aria-label="Market Orbit dashboard"><span className="brand-mark" aria-hidden="true">M</span><span>MARKET <b>ORBIT</b></span></a>
-      <div className="topbar-context"><span className="context-kicker">WORKSPACE</span><span>{datasetName || 'Marketing intelligence'}</span></div>
-      <div className="topbar-actions">
-        <div className="user-menu-wrap">
-          <button className="user-menu-trigger" type="button" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label={`Account menu for ${label}`}>
-            <span className="user-avatar" aria-hidden="true">{initials}</span><span className="user-name">{label}</span><span className="chevron" aria-hidden="true">⌄</span>
-          </button>
-          {menuOpen && <div className="user-menu"><span className="menu-user-label">Signed in as</span><strong>{user?.email || label}</strong><button type="button" onClick={onLogout}>Sign out</button></div>}
+    <header className="navbar">
+      <div className="navbar-brand">
+        <h2>Market Orbit</h2>
+        <span>Marketing Intelligence</span>
+      </div>
+
+      <div className="navbar-user">
+        <div className="user-avatar" aria-hidden="true">{displayName.charAt(0).toUpperCase()}</div>
+
+        <div className="user-info">
+          <strong>{displayName}</strong>
+          <span>{user?.email || 'Marketing Analyst'}</span>
         </div>
+
+        <button className="logout-button" onClick={logout} type="button">
+          Logout
+        </button>
       </div>
     </header>
   );

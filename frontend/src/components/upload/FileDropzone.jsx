@@ -1,29 +1,61 @@
-import { useRef, useState } from 'react';
+import React, { useState, useRef } from 'react';
 
-export default function FileDropzone({ onFileSelected, disabled = false }) {
+export default function FileDropzone({ onFileSelected, disabled }) {
   const [isDragging, setIsDragging] = useState(false);
-  const inputRef = useRef(null);
-  const openPicker = () => { if (!disabled) inputRef.current?.click(); };
+  const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
+
+  const selectFile = (file) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setError('The backend accepts CSV files only. Please choose a .csv file.');
+      return;
+    }
+    setError('');
+    onFileSelected(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    if (!disabled) setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (disabled) return;
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      selectFile(files[0]);
+    }
+  };
 
   return (
     <div
-      className={`file-dropzone ${isDragging ? 'dragging' : ''} ${disabled ? 'dropzone-disabled' : ''}`}
-      role="button"
-      tabIndex={disabled ? -1 : 0}
-      aria-disabled={disabled}
-      aria-label="Choose or drop a CSV dataset"
-      onClick={openPicker}
-      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPicker(); } }}
-      onDragEnter={(event) => { event.preventDefault(); if (!disabled) setIsDragging(true); }}
-      onDragOver={(event) => { event.preventDefault(); if (!disabled) setIsDragging(true); }}
-      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setIsDragging(false); }}
-      onDrop={(event) => { event.preventDefault(); setIsDragging(false); if (!disabled && event.dataTransfer.files?.[0]) onFileSelected(event.dataTransfer.files[0]); }}
+      className={`file-dropzone ${isDragging ? 'dragging' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={() => !disabled && fileInputRef.current?.click()}
     >
-      <input ref={inputRef} className="file-input-hidden" type="file" accept=".csv,text/csv" aria-label="Select CSV file" disabled={disabled} onClick={(event) => event.stopPropagation()} onChange={(event) => { if (event.target.files?.[0]) onFileSelected(event.target.files[0]); event.target.value = ''; }} />
-      <span className="dropzone-icon" aria-hidden="true"><span>↑</span></span>
-      <strong>Drop your CSV file here</strong>
-      <span className="dropzone-copy">or <span className="dropzone-browse">browse files</span> from your device</span>
-      <span className="dropzone-format"><span className="csv-badge">CSV</span> Comma-separated values only</span>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        style={{ display: 'none' }}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(e) => {
+          selectFile(e.target.files?.[0]);
+          e.target.value = '';
+        }}
+      />
+      <p>Drag and drop your marketing campaign CSV file here, or click to browse</p>
+      <span>Supported format: CSV</span>
+      {error && <p className="upload-error" role="alert">{error}</p>}
     </div>
   );
 }

@@ -6,9 +6,8 @@ export const uploadApi = {
     formData.append('file', file);
     return apiClient('/uploads/', { method: 'POST', body: formData });
   },
-  getDatasets: () => apiClient('/uploads/'),
   getUploadStatus: (datasetId) => apiClient(`/uploads/${encodeURIComponent(datasetId)}/status`),
-  getDatasetCampaigns: (datasetId) => apiClient(`/uploads/${encodeURIComponent(datasetId)}/campaigns`),
+  getDatasets: () => apiClient('/uploads/'),
 };
 
 export default uploadApi;

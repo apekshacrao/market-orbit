@@ -1,24 +1,67 @@
-function amount(value) {
-  return value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
+import React from 'react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 
 export default function PerformanceChart({ data = [] }) {
-  const rows = data.slice(0, 7);
-  const maxValue = Math.max(1, ...rows.flatMap((item) => [Number(item.spend) || 0, Number(item.revenue) || 0]));
-  const roasRows = rows.filter((item) => item.roas != null && Number.isFinite(Number(item.roas)));
-  const maxRoas = Math.max(1, ...roasRows.map((item) => Number(item.roas)));
+  const chartData = data || [];
+
   return (
-    <section className="panel performance-panel">
-      <div className="panel-heading chart-heading"><div><p className="eyebrow">CAMPAIGN MIX</p><h2>Spend &amp; revenue</h2><p className="panel-subtitle">Compare reported spend against revenue for each campaign.</p></div><div className="chart-legend"><span><i className="legend-swatch spend-swatch" /> Spend</span><span><i className="legend-swatch revenue-swatch" /> Revenue</span></div></div>
-      {!rows.length ? <p className="panel-empty chart-empty">Campaign performance will appear when this dataset has results.</p> : <div className="bar-chart" role="img" aria-label="Campaign spend and revenue comparison">
-        {rows.map((item, index) => <div className="bar-row" key={`${item.campaignName}-${index}`}>
-          <div className="bar-label" title={item.campaignName}>{item.campaignName || 'Unnamed campaign'}</div>
-          <div className="bar-stack"><div className="bar-line"><span className="bar-track"><span className="bar-fill spend-fill" style={{ width: `${Math.max(item.spend > 0 ? 1 : 0, (Number(item.spend || 0) / maxValue) * 100)}%` }} /></span><span className="bar-value">{amount(item.spend)}</span></div>
-            <div className="bar-line"><span className="bar-track"><span className="bar-fill revenue-fill" style={{ width: `${Math.max(item.revenue > 0 ? 1 : 0, (Number(item.revenue || 0) / maxValue) * 100)}%` }} /></span><span className="bar-value">{amount(item.revenue)}</span></div></div>
-        </div>)}
-      </div>}
-      {roasRows.length > 0 && <div className="roas-comparison"><div className="roas-heading"><span className="eyebrow">EFFICIENCY</span><strong>ROAS by campaign</strong></div><div className="roas-list">{roasRows.map((item, index) => <div className="roas-row" key={`${item.campaignName}-roas-${index}`}><span title={item.campaignName}>{item.campaignName}</span><span className="roas-track"><i style={{ width: `${Math.max(Number(item.roas) > 0 ? 2 : 0, (Number(item.roas) / maxRoas) * 100)}%` }} /></span><b>{Number(item.roas).toFixed(2)}×</b></div>)}</div></div>}
-      <p className="chart-footnote">Values use the dataset’s original currency; the currency code is not provided by the API.</p>
-    </section>
+    <div className="performance-chart-wrapper">
+      <h3>Campaign Performance</h3>
+
+      {chartData.length ? <div className="performance-chart">
+        <ResponsiveContainer width="100%" height={320}>
+          <LineChart data={chartData}>
+            <CartesianGrid stroke="#36315B" strokeDasharray="3 3" />
+
+            <XAxis
+              dataKey="campaignName"
+              stroke="#B8B2D0"
+            />
+
+            <YAxis
+              stroke="#B8B2D0"
+            />
+
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#080B38',
+                border: '1px solid #512777',
+                borderRadius: '8px',
+                color: '#F5F3FA'
+              }}
+            />
+
+            <Legend />
+
+            <Line
+              type="monotone"
+              dataKey="spend"
+              name="Spend"
+              stroke="#9B72CF"
+              strokeWidth={3}
+              dot={false}
+            />
+
+            <Line
+              type="monotone"
+              dataKey="revenue"
+              name="Revenue"
+              stroke="#52B7D8"
+              strokeWidth={3}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div> : <p className="empty-state">No campaign performance data is available for this dataset.</p>}
+    </div>
   );
 }

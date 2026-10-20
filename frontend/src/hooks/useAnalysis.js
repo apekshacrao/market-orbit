@@ -1,28 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import resultsApi from '../api/resultsApi';
 
-export function useAnalysis(datasetId, refreshKey = 0) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(Boolean(datasetId));
-  const [error, setError] = useState('');
+export function useAnalysis(datasetId) {
+  const [request, setRequest] = useState({ datasetId: null, data: null, loading: false, error: null });
 
   useEffect(() => {
+    let active = true;
     if (!datasetId) {
-      setData(null);
-      setLoading(false);
-      setError('');
+      setRequest({ datasetId: null, data: null, loading: false, error: null });
       return undefined;
     }
 
-    let active = true;
-    setLoading(true);
-    setError('');
+    setRequest({ datasetId, data: null, loading: true, error: null });
     resultsApi.getAnalysisResults(datasetId)
-      .then((result) => { if (active) setData(result); })
-      .catch((requestError) => { if (active) { setData(null); setError(requestError.message); } })
-      .finally(() => { if (active) setLoading(false); });
+      .then((data) => {
+        if (active) setRequest({ datasetId, data, loading: false, error: null });
+      })
+      .catch((err) => {
+        if (active) setRequest({ datasetId, data: null, loading: false, error: err.message });
+      });
     return () => { active = false; };
-  }, [datasetId, refreshKey]);
+  }, [datasetId]);
 
-  return { data, loading, error };
+  if (request.datasetId !== datasetId) {
+    return { data: null, loading: Boolean(datasetId), error: null };
+  }
+  return { data: request.data, loading: request.loading, error: request.error };
 }

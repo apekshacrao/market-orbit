@@ -23,6 +23,12 @@ export function useAuth() {
     }
   }, []);
 
+  const getCurrentUser = useCallback(async () => {
+    const current = await authApi.getCurrentUser();
+    setUser(current);
+    return current;
+  }, []);
+
   const register = useCallback(async (userData) => {
     setLoading(true);
     setError(null);
@@ -47,5 +53,5 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { user, loading, error, login, register, logout };
+  return { user, loading, error, login, register, logout, getCurrentUser };
 }
