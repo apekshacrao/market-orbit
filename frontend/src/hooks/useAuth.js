@@ -10,8 +10,9 @@ export function useAuth() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authApi.login(credentials);
+      const res = await authApi.login({ email: credentials.email.trim(), password: credentials.password });
       localStorage.setItem('token', res.access_token);
+      localStorage.setItem('user', JSON.stringify(res.user));
       setUser(res.user);
       return res;
     } catch (err) {
@@ -26,7 +27,11 @@ export function useAuth() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authApi.register(userData);
+      const res = await authApi.register({
+        name: userData.name.trim(),
+        email: userData.email.trim(),
+        password: userData.password,
+      });
       return res;
     } catch (err) {
       setError(err.message);
@@ -38,6 +43,7 @@ export function useAuth() {
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setUser(null);
   }, []);
 

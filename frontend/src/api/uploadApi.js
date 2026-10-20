@@ -1,33 +1,14 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+import apiClient from './client';
 
 export const uploadApi = {
-  uploadFile: async (file, onProgress) => {
+  uploadFile: (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    const token = localStorage.getItem('token');
-
-    const response = await fetch(`${API_BASE_URL}/uploads/`, {
-      method: 'POST',
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'File upload failed');
-    }
-
-    return response.json();
+    return apiClient('/uploads/', { method: 'POST', body: formData });
   },
-
-  getUploadStatus: (uploadId) => {
-    const token = localStorage.getItem('token');
-    return fetch(`${API_BASE_URL}/uploads/${uploadId}/status`, {
-      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
-    }).then(res => res.json());
-  },
+  getDatasets: () => apiClient('/uploads/'),
+  getUploadStatus: (datasetId) => apiClient(`/uploads/${encodeURIComponent(datasetId)}/status`),
+  getDatasetCampaigns: (datasetId) => apiClient(`/uploads/${encodeURIComponent(datasetId)}/campaigns`),
 };
 
 export default uploadApi;
