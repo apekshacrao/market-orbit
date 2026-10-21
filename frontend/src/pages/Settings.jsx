@@ -32,7 +32,7 @@ export default function Settings({ user }) {
 
       <section className="settings-section" aria-labelledby="settings-preferences">
         <div className="settings-section-heading"><div><h2 id="settings-preferences">Preferences</h2><p>Adjust how the workspace behaves in this browser.</p></div></div>
-        <div className="preference-row theme-preview"><div><strong>Current dark appearance</strong><small>The existing application palette is active.</small></div></div>
+        <div className="preference-row theme-preview"><div><strong>Orbit workspace theme</strong><small>Cool neutral surfaces with clear blue actions.</small></div></div>
         <label className="setting-toggle"><span><strong>Reduce motion</strong><small>Limit interface animations and transitions.</small></span><input type="checkbox" checked={reduced} onChange={(event) => setReduced(event.target.checked)} aria-label="Reduce motion"/><i/></label>
         <p className="settings-note">The reduced-motion preference is saved in this browser.</p>
       </section>

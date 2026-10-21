@@ -14,7 +14,7 @@ export default function Register() {
   };
 
   return (
-    <div className="page-container auth-page">
+    <main className="page-container auth-page">
       <div className="auth-brand">
         <h1>Market Orbit</h1>
         <p>Turn your marketing data into clear, actionable insights.</p>
@@ -22,6 +22,6 @@ export default function Register() {
       <div className="auth-form-container">
         <RegisterForm onSubmit={handleRegister} loading={loading} error={error} />
       </div>
-    </div>
+    </main>
   );
 }

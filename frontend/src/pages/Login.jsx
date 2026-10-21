@@ -14,7 +14,7 @@ export default function Login() {
   };
 
  return (
-  <div className="page-container auth-page">
+  <main className="page-container auth-page">
     <div className="auth-brand">
       <h1>Market Orbit</h1>
       <p>AI-powered marketing performance insights.</p>
@@ -23,6 +23,6 @@ export default function Login() {
     <div className="auth-form-container">
       <LoginForm onSubmit={handleLogin} loading={loading} error={error} />
     </div>
-  </div>
+  </main>
 );
 }

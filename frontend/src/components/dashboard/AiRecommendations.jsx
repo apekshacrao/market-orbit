@@ -3,8 +3,7 @@ import React from 'react';
 export default function AiRecommendations({ recommendations = [] }) {
   return (
     <section className="ai-recommendations-container">
-      <h3>AI-Powered Insights &amp; Recommendations</h3>
-      <p className="recommendations-description">Recommendations generated for this dataset.</p>
+      <div className="recommendations-heading"><div><p className="eyebrow">DECISION SUPPORT</p><h2>AI recommendations</h2><p className="recommendations-description">Prioritized actions based on the selected dataset.</p></div>{recommendations.length > 0 && <span className="record-count">{recommendations.length} suggestions</span>}</div>
       {recommendations.length ? (
         <div className="recommendations-list">
           {recommendations.map((rec, index) => (
@@ -19,7 +18,7 @@ export default function AiRecommendations({ recommendations = [] }) {
             </article>
           ))}
         </div>
-      ) : <p className="empty-state">No recommendations are available for this dataset yet.</p>}
+      ) : <div className="recommendations-empty"><strong>No recommendations yet</strong><p>Refresh the analysis or review the campaign metrics and trends for this dataset.</p><a href="/graphs">Explore analytics</a></div>}
     </section>
   );
 }
