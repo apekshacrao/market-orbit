@@ -38,13 +38,13 @@ export default function Upload({ user }) {
         <Sidebar user={user} />
         <main className="dashboard-content">
           <div className="upload-page">
-            <h1>Upload Dataset</h1>
-            <p className="upload-description">Upload campaign data to calculate performance and recommendations.</p>
+            <div className="page-heading upload-heading"><div><p className="eyebrow">GET STARTED</p><h1>Upload a dataset</h1><p>Bring in campaign data to explore performance and get recommendations.</p></div></div>
             <div className="upload-card">
-              <div className="upload-icon" aria-hidden="true">↑</div>
-              <h2>Choose your dataset</h2>
-              <p>CSV files only, as supported by the upload API.</p>
+              <div className="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg></div>
+              <h2>Choose a CSV file</h2>
+              <p>Upload campaign rows as a .csv file. Your file is used to generate this workspace’s analytics.</p>
               <FileDropzone onFileSelected={selectFile} disabled={loading} />
+              <div className="upload-requirements"><div><strong>Required columns</strong><span>campaign_name, channel, spend, conversions</span></div><div><strong>Recommended for trend charts</strong><span>date, revenue</span></div><div><strong>Optional metrics</strong><span>clicks, impressions</span></div></div>
               {error && <p className="upload-error" role="alert">{error}</p>}
               {file && (
                 <div className="selected-file-card">
@@ -57,9 +57,9 @@ export default function Upload({ user }) {
               </button>
               {uploadedDataset && (
                 <div className="upload-success" role="status">
-                  <p><strong>{uploadedDataset.message || 'Upload confirmed.'}</strong></p>
-                  <p>{uploadedDataset.filename} · Status: {uploadedDataset.status}</p>
-                  <a className="primary-link-button" href={`/dashboard?dataset_id=${encodeURIComponent(uploadedDataset.dataset_id)}`}>View dataset dashboard</a>
+                  <p><strong>Your dataset is ready to explore.</strong></p>
+                  <p>{uploadedDataset.filename} · Processing status: {uploadedDataset.status}</p>
+                  <a className="primary-link-button" href={`/dashboard?dataset_id=${encodeURIComponent(uploadedDataset.dataset_id)}`}>Open this dataset</a>
                 </div>
               )}
             </div>

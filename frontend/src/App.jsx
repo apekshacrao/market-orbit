@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import authApi from './api/authApi';
 import Loader from './components/common/Loader';
+import WorkspaceSkeleton from './components/common/WorkspaceSkeleton';
 
 function savedUser() {
   try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
@@ -38,7 +39,7 @@ export default function App() {
     document.documentElement.classList.toggle('reduce-motion', localStorage.getItem('market-orbit-reduced-motion') === 'true');
   }, []);
 
-  if (checkingSession) return <Loader message="Restoring your session…" />;
+  if (checkingSession) return <WorkspaceSkeleton message="Restoring your workspace…" />;
 
   const hasSession = Boolean(localStorage.getItem('token') && user);
   const protectedPath = ['/dashboard', '/upload', '/graphs', '/recommendations', '/live-data', '/settings'].includes(path);

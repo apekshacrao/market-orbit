@@ -1,10 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 
 export default function FileDropzone({ onFileSelected, disabled }) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState('');
-  const fileInputRef = useRef(null);
-
   const selectFile = (file) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -35,36 +33,30 @@ export default function FileDropzone({ onFileSelected, disabled }) {
   };
 
   return (
-    <div
-      className={`file-dropzone ${isDragging ? 'dragging' : ''}`}
-      role="button"
-      tabIndex={disabled ? -1 : 0}
-      aria-disabled={disabled}
-      onKeyDown={(event) => {
-        if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          fileInputRef.current?.click();
-        }
-      }}
+    <>
+    <label
+      className={`file-dropzone ${isDragging ? 'dragging' : ''} ${disabled ? 'disabled' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onClick={() => !disabled && fileInputRef.current?.click()}
     >
       <input
-        ref={fileInputRef}
+        id="campaign-csv-file"
+        className="visually-hidden file-dropzone-input"
         type="file"
         accept=".csv,text/csv"
-        style={{ display: 'none' }}
-        onClick={(event) => event.stopPropagation()}
+        aria-label="Choose a CSV campaign data file"
+        aria-describedby="file-dropzone-help"
+        disabled={disabled}
         onChange={(e) => {
           selectFile(e.target.files?.[0]);
           e.target.value = '';
         }}
       />
-      <p>Drag and drop your marketing campaign CSV file here, or click to browse</p>
-      <span>Supported format: CSV</span>
-      {error && <p className="upload-error" role="alert">{error}</p>}
-    </div>
+      <span className="file-dropzone-instruction">Drag and drop your marketing campaign CSV file here, or click to browse</span>
+      <span id="file-dropzone-help">Supported format: CSV</span>
+    </label>
+    {error && <p className="upload-error" role="alert">{error}</p>}
+    </>
   );
 }

@@ -6,11 +6,11 @@ const number = (value) => value == null || !Number.isFinite(Number(value))
 
 export default function KpiCards({ kpis }) {
   const items = [
-    { title: 'Total Spend', value: number(kpis?.totalSpend) },
-    { title: 'Total Revenue', value: number(kpis?.totalRevenue) },
-    { title: 'Overall ROAS', value: kpis?.overallRoas == null ? 'Unavailable' : `${number(kpis.overallRoas)}x` },
-    { title: 'Conversion Rate', value: kpis?.avgConversionRate == null ? 'Unavailable' : `${number(kpis.avgConversionRate)}%` },
-    { title: 'Average CPA', value: number(kpis?.avgCpa) },
+    { title: 'Total spend', value: number(kpis?.totalSpend), context: 'Across the selected dataset' },
+    { title: 'Total revenue', value: number(kpis?.totalRevenue), context: 'Across the selected dataset' },
+    { title: 'Overall ROAS', value: kpis?.overallRoas == null ? 'Unavailable' : `${number(kpis.overallRoas)}×`, context: 'Revenue per unit of spend' },
+    { title: 'Conversion rate', value: kpis?.avgConversionRate == null ? 'Unavailable' : `${number(kpis.avgConversionRate)}%`, context: 'Conversions as a share of clicks' },
+    { title: 'Average CPA', value: number(kpis?.avgCpa), context: 'Spend per conversion' },
   ];
 
   return (
@@ -19,7 +19,7 @@ export default function KpiCards({ kpis }) {
         <article className="kpi-card" key={item.title}>
           <p className="kpi-title">{item.title}</p>
           <h2 className="kpi-value">{item.value}</h2>
-          <span className="kpi-change">Dataset results</span>
+          <span className="kpi-context">{item.context}</span>
         </article>
       ))}
     </section>
